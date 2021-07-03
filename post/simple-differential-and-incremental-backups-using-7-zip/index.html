@@ -1,0 +1,116 @@
+<!doctype html><html class=no-js lang=en-us xmlns=http://www.w3.org/1999/xhtml xml:lang=en lang=en-us><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content="Simple Differential and Incremental Backups Using 7-zip"><meta name=author content><meta name=keyword content><link rel="shortcut icon" href=/favicon.ico><title>Simple Differential and Incremental Backups Using 7-zip &#183; Spaghetti Code with Beer</title><link rel=stylesheet href=https://nagimov.me/css/theme/united2.css><link rel=stylesheet href=https://nagimov.me/css/font-awesome.min.css><link rel=stylesheet href=https://nagimov.me/css/style.css><script>var remark_config={host:"https://remark.ngm.me",site_id:'nagimov_me',components:['embed'],theme:'light',};</script><script>!function(e,n){for(var o=0;o<e.length;o++){var r=n.createElement("script"),c=".js",d=n.head||n.body;"noModule"in r?(r.type="module",c=".mjs"):r.async=!0,r.defer=!0,r.src=remark_config.host+"/web/"+e[o]+c,d.appendChild(r)}}(remark_config.components||["embed"],document);</script><script>(function(f,a,t,h,o,m){a[h]=a[h]||function(){(a[h].q=a[h].q||[]).push(arguments)};o=f.createElement('script'),m=f.getElementsByTagName('script')[0];o.async=1;o.src=t;o.id='fathom-script';m.parentNode.insertBefore(o,m)})(document,window,'https://fathom.ngm.me/tracker.js','fathom');fathom('set','siteId','RYEFY');fathom('trackPageview');</script><link href rel=alternate type=application/rss+xml title="Spaghetti Code with Beer"></head><body lang=en><div class=container><div class=row><div class="navbar navbar-default" role=navigation><div class=navbar-header><a class=navbar-brand href=https://nagimov.me>Spaghetti Code with Beer</a></div><div class="navbar-collapse collapse navbar-responsive-collapse"><ul class="nav navbar-nav navbar-right" style=font-size:18px><li><a href=https://nagimov.me>Home</a></li><li><a href=https://nagimov.me/post/>Posts</a></li><li><a href=/about/>About</a></li></ul></div></div></div></div><div class=container><div class=row><div class=col-md-12 style=display:flex;justify-content:space-between><div><h3>Simple Differential and Incremental Backups Using 7-zip</h3></div><div>&nbsp;&nbsp;&nbsp;&nbsp;</div><div style=margin-bottom:10.5px;margin-top:21px><span class="label label-primary">2020-04-05</span></div></div></div><div class=row><div class=col-md-12><p>Quick, cheap and easy (cheap as in &ldquo;free&rdquo;, &ldquo;free&rdquo; as in &ldquo;freedom&rdquo;) alternative to both heavy backup solutions and lightweight git-repo based backups with much less overhead and better compression: <a href=https://www.7-zip.org>7-zip</a>.</p><p>7-zip&rsquo;s <code>-u</code> switch provides fine-grained control over creating and updating archives based on states of already-archived and to-be-archived files. The switch is specified as a combination of state-action flags (<a href=https://sevenzip.osdn.jp/chm/cmdline/switches/update.htm>more info</a>):</p><table class="table table-dark table-striped table-bordered"><thead><tr><th align=center>State</th><th align=left>State condition</th><th align=center>File on Disk</th><th align=center>File in Archive</th></tr></thead><tbody><tr><td align=center>p</td><td align=left>File exists in archive, but is not matched with wildcard</td><td align=center>?</td><td align=center>Exists, but is not matched</td></tr><tr><td align=center>q</td><td align=left>File exists in archive, but doesn&rsquo;t exist on disk</td><td align=center>Doesn&rsquo;t exist</td><td align=center>Exists</td></tr><tr><td align=center>r</td><td align=left>File doesn&rsquo;t exist in archive, but exists on disk</td><td align=center>Exists</td><td align=center>Doesn&rsquo;t exist</td></tr><tr><td align=center>x</td><td align=left>File in archive is newer than the file on disk</td><td align=center>Older</td><td align=center>Newer</td></tr><tr><td align=center>y</td><td align=left>File in archive is older than the file on disk</td><td align=center>Newer</td><td align=center>Older</td></tr><tr><td align=center>z</td><td align=left>File in archive is same as the file on disk</td><td align=center>Same</td><td align=center>Same</td></tr><tr><td align=center>w</td><td align=left>Can not be detected what file is newer (times are the same, sizes are different)</td><td align=center>?</td><td align=center>?</td></tr></tbody></table><table class="table table-dark table-striped table-bordered"><thead><tr><th align=center>Action</th><th align=left>Description</th></tr></thead><tbody><tr><td align=center>0</td><td align=left>Ignore file (don&rsquo;t create item in new archive for this file)</td></tr><tr><td align=center>1</td><td align=left>Copy file (copy from old archive to new)</td></tr><tr><td align=center>2</td><td align=left>Compress (compress file from disk to new archive)</td></tr><tr><td align=center>3</td><td align=left>Create Anti-item (item that will delete file or directory during extracting)</td></tr></tbody></table><p>Full combination of the above states-actions covers every possible backup scenario without any extra file comparison logic.</p><p>Examples:</p><ul><li>update existing full backup of <code>$HOME/*</code> directory:<ul><li><code>7z u full_backup.7z $HOME/* -up0q0r2x2y2z1w2</code><ul><li><code>p0</code> - ignore files not matched by wildcard (irrelevant in case of <code>$HOME/*</code> wildcard)</li><li><code>q0</code> - ignore removed files</li><li><code>r2</code> - if new file was created, compress it</li><li><code>x2</code>, <code>y2</code> - if file is newer or older, compress it</li><li><code>z1</code> - if file is the same, copy it without compression (this flag significantly reduces compression time)</li><li><code>w2</code> - if in doubt, compress the file</li></ul></li></ul></li><li>create a differential backup of all the files changed since the last full backup was created:<ul><li><code>7z u full_backup.7z -u- -"up0q3r2x2y2z0w2!{differential_backup.7z}" $HOME/*</code><ul><li><code>-u-</code> - &ldquo;dash&rdquo; parameter disables updates in the base archive <code>full_backup.7z</code></li><li><code>q0</code> - if file was removed, &ldquo;remember&rdquo; the removal by creating an &ldquo;anti-item&rdquo;</li><li><code>z0</code> - if file is the same, skip it since backup is differential</li><li>the rest of the flags are the same</li></ul></li></ul></li></ul><p>Incremental backups can be achieved by creating &ldquo;decremental&rdquo; backups along the way with a rolling up-to-date full backup (order matters!) in two steps:</p><ul><li>create a &ldquo;decremental backup&rdquo; between the existing state and the previous full backup, a.k.a. &ldquo;incremental backup&rdquo; between previous and current states:<ul><li><code>7z u full_backup.7z $HOME/* -u- -up1q1r3x1y1z0w1!{incremental_backup.7z}</code></li></ul></li><li>update a full backup to keep track of the existing state:<ul><li><code>7z u full_backup.7z $HOME/* -up0q0r2x2y2z1w2</code></li></ul></li></ul><p>Using this approach, files can be rolled back to the state of any incremental backup by simply extracting all the backups in reverse chronological order, e.g. files can be rolled back to &ldquo;three backups back&rdquo; in four steps:</p><ul><li><code>7z x -y full_backup.7z -o$HOME</code></li><li><code>7z x -y incremental_backup_2020_04_05.7z -o$HOME</code></li><li><code>7z x -y incremental_backup_2020_04_04.7z -o$HOME</code></li><li><code>7z x -y incremental_backup_2020_04_03.7z -o$HOME</code></li></ul><p>Thanks to 7-zip&rsquo;s open file format, you can easily peek inside of any incremental/differential backup. Combined with a strong encryption and incredible compression, this makes 7-zip my go-to choice for all of my backups.</p><p>AFAIK the only way to support development of 7-zip is to use developer&rsquo;s referral link to digital ocean, so please do so if you can :) <a href=https://m.do.co/c/cab893b82fa8>https://m.do.co/c/cab893b82fa8</a></p><h3 id=testing>Testing</h3><p>Here&rsquo;s a little MWE to test incremental backups.</p><p>Prepare a test folder (<code>echo</code> is used instead of <code>touch</code> so the size of files can be changed and tracked):</p><pre><code>cd /tmp
+mkdir test
+echo 'test' &gt;test/1
+echo 'test' &gt;test/2
+mkdir test/3
+echo 'test' &gt;test/3/4
+ls -ld $(find test)
+</code></pre><p>Get the expected list of 5 byte long files:</p><pre><code>drwxr-xr-x 3 nagimov nagimov 4096 Apr  5 21:15 test
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/1
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/3/4
+</code></pre><p>Create initial full backup and list its files:</p><pre><code>7z a test.7z test/*
+7z l test.7z
+</code></pre><p>Note the timestamps and file sizes:</p><pre><code>   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06 D....            0            0  test/3
+2020-04-05 21:15:06 ....A            5           19  test/1
+2020-04-05 21:15:06 ....A            5               test/2
+2020-04-05 21:15:06 ....A            5               test/3/4
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06                 15           19  3 files, 1 folders
+</code></pre><p>Increase the size of file <code>2</code> and create new folder <code>5</code> with file <code>6</code>:</p><pre><code>echo 'testtest' &gt;test/2
+mkdir test/5
+echo 'testtest' &gt;test/5/6
+ls -ld $(find test)
+</code></pre><p>Get an expected output - file <code>2</code> is larger, new file <code>5/6</code> is appeared:</p><pre><code>drwxr-xr-x 4 nagimov nagimov 4096 Apr  5 21:15 test
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/1
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 test/5
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 test/5/6
+</code></pre><p>Create an incremental backup:</p><pre><code>7z u test.7z -u- -up1q1r3x1y1z0w1'!'test_inc1.7z test/*
+7z l test_inc1.7z
+</code></pre><p>Expectedly, there are only pre-modified versions of modified files in the incremental backup - file <code>2</code> is still tiny and file <code>5/6</code> is an &ldquo;anti-item&rdquo; of newly created file (note that its size is 0):</p><pre><code>   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+                    .....            0            0  test/5/6
+                    D....            0            0  test/5
+2020-04-05 21:15:06 ....A            5            9  test/2
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06                  5            9  2 files, 1 folders
+</code></pre><p>Update full backup:</p><pre><code>7z u test.7z test/* -up0q0r2x2y2z1w2
+7z l test.7z
+</code></pre><p>It now contains current versions of all the files - larger <code>2</code> and <code>5/6</code>:</p><pre><code>   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06 D....            0            0  test/3
+2020-04-05 21:15:31 D....            0            0  test/5
+2020-04-05 21:15:06 ....A            5           14  test/1
+2020-04-05 21:15:06 ....A            5               test/3/4
+2020-04-05 21:15:31 ....A            9           20  test/2
+2020-04-05 21:15:31 ....A            9               test/5/6
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:31                 28           34  4 files, 2 folders
+</code></pre><p>Make <code>2</code> even larger and remove <code>1</code>:</p><pre><code>echo 'testtesttest' &gt;test/2
+rm test/1
+ls -ld $(find test)
+</code></pre><p>Now <code>2</code> is the largest and <code>1</code> isn&rsquo;t present anymore:</p><pre><code>drwxr-xr-x 4 nagimov nagimov 4096 Apr  5 21:16 test
+-rw-r--r-- 1 nagimov nagimov   13 Apr  5 21:16 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 test/5
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 test/5/6
+</code></pre><p>Another step of incremental backup:</p><pre><code>7z u test.7z -u- -up1q1r3x1y1z0w1'!'test_inc2.7z test/*
+7z l test_inc2.7z
+</code></pre><p>Pre-modified versions of <code>1</code> and <code>2</code> are archived - <code>1</code> in its original size and <code>2</code> in its intermediate size:</p><pre><code>   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06 ....A            5            9  test/1
+2020-04-05 21:15:31 ....A            9           13  test/2
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:31                 14           22  2 files
+</code></pre><p>Another update of the full backup:</p><pre><code>7z u test.7z test/* -up0q0r2x2y2z1w2
+7z l test.7z
+</code></pre><p>Full archive is now up to date:</p><pre><code>   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:15:06 D....            0            0  test/3
+2020-04-05 21:15:31 D....            0            0  test/5
+2020-04-05 21:15:06 ....A            5            9  test/3/4
+2020-04-05 21:15:31 ....A            9           13  test/5/6
+2020-04-05 21:16:00 ....A           13           17  test/2
+------------------- ----- ------------ ------------  ------------------------
+2020-04-05 21:16:00                 27           39  3 files, 2 folders
+</code></pre><p>Now it&rsquo;s time to roll back through every state of the <code>test</code> folder:</p><pre><code>mkdir unzip
+7z x -y test.7z -ounzip
+ls -ld $(find unzip)
+</code></pre><p>Latest state with absent <code>1</code>, beefy 13 bytes long <code>2</code> and present <code>6</code>:</p><pre><code>drwxr-xr-x 3 nagimov nagimov 4096 Apr  5 21:16 unzip
+drwx------ 4 nagimov nagimov 4096 Apr  5 21:16 unzip/test
+-rw-r--r-- 1 nagimov nagimov   13 Apr  5 21:16 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 unzip/test/5
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 unzip/test/5/6
+</code></pre><p>Going back to state inc2:</p><pre><code>7z x -y test_inc2.7z -ounzip
+ls -ld $(find unzip)
+</code></pre><p>Getting <code>1</code> undeleted and <code>2</code> thinned down to 9 bytes:</p><pre><code>drwxr-xr-x 3 nagimov nagimov 4096 Apr  5 21:16 unzip
+drwx------ 4 nagimov nagimov 4096 Apr  5 21:16 unzip/test
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/1
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 unzip/test/5
+-rw-r--r-- 1 nagimov nagimov    9 Apr  5 21:15 unzip/test/5/6
+</code></pre><p>Going back to initial state:</p><pre><code>7z x -y test_inc1.7z -ounzip
+ls -ld $(find unzip)
+</code></pre><p>Getting <code>5/6</code> uncreated and <code>2</code> reduced to 5 bytes:</p><pre><code>drwxr-xr-x 3 nagimov nagimov 4096 Apr  5 21:16 unzip
+drwx------ 3 nagimov nagimov 4096 Apr  5 21:17 unzip/test
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/1
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr  5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov    5 Apr  5 21:15 unzip/test/3/4
+</code></pre><hr></div></div><div class=row><div class=col-md-12 style=display:flex;justify-content:space-between><div>Tagged
+#<a href=/tags/backup>backup</a>
+,
+#<a href=/tags/7-zip>7-zip</a>
+,
+#<a href=/tags/archiving>archiving</a></div><div><span class="label label-primary">2020-04-05</span></div></div></div><div class=row><div class=col-md-12><hr></div></div><div class=row><div class=col-md-12><div id=remark42></div></div></div></div><div class=container><div class="row col-md-12"><footer><div class=pull-left><p>&copy; 2021 Ruslan Nagimov ~ Powered By <a href=https://gohugo.io>Hugo</a> ~ <a href=https://creativecommons.org/licenses/by/4.0/>License: CC BY 4.0</a></p></div><div class=pull-right><a href=https://github.com/nagimov target=_blank><i class="fa fa-github-square fa-2x"></i></a></div></footer></div></div></body></html>

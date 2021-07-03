@@ -1,0 +1,159 @@
+<!doctype html><html class=no-js lang=en-us xmlns=http://www.w3.org/1999/xhtml xml:lang=en lang=en-us><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content="Simple Recovery of LUKS-encrypted Partitions"><meta name=author content><meta name=keyword content><link rel="shortcut icon" href=/favicon.ico><title>Simple Recovery of LUKS-encrypted Partitions &#183; Spaghetti Code with Beer</title><link rel=stylesheet href=https://nagimov.me/css/theme/united2.css><link rel=stylesheet href=https://nagimov.me/css/font-awesome.min.css><link rel=stylesheet href=https://nagimov.me/css/style.css><script>var remark_config={host:"https://remark.ngm.me",site_id:'nagimov_me',components:['embed'],theme:'light',};</script><script>!function(e,n){for(var o=0;o<e.length;o++){var r=n.createElement("script"),c=".js",d=n.head||n.body;"noModule"in r?(r.type="module",c=".mjs"):r.async=!0,r.defer=!0,r.src=remark_config.host+"/web/"+e[o]+c,d.appendChild(r)}}(remark_config.components||["embed"],document);</script><script>(function(f,a,t,h,o,m){a[h]=a[h]||function(){(a[h].q=a[h].q||[]).push(arguments)};o=f.createElement('script'),m=f.getElementsByTagName('script')[0];o.async=1;o.src=t;o.id='fathom-script';m.parentNode.insertBefore(o,m)})(document,window,'https://fathom.ngm.me/tracker.js','fathom');fathom('set','siteId','RYEFY');fathom('trackPageview');</script><link href rel=alternate type=application/rss+xml title="Spaghetti Code with Beer"></head><body lang=en><div class=container><div class=row><div class="navbar navbar-default" role=navigation><div class=navbar-header><a class=navbar-brand href=https://nagimov.me>Spaghetti Code with Beer</a></div><div class="navbar-collapse collapse navbar-responsive-collapse"><ul class="nav navbar-nav navbar-right" style=font-size:18px><li><a href=https://nagimov.me>Home</a></li><li><a href=https://nagimov.me/post/>Posts</a></li><li><a href=/about/>About</a></li></ul></div></div></div></div><div class=container><div class=row><div class=col-md-12 style=display:flex;justify-content:space-between><div><h3>Simple Recovery of LUKS-encrypted Partitions</h3></div><div>&nbsp;&nbsp;&nbsp;&nbsp;</div><div style=margin-bottom:10.5px;margin-top:21px><span class="label label-primary">2020-03-09</span></div></div></div><div class=row><div class=col-md-12><p>LUKS encryption, while convenient, can become a major pain when the drive gets corrupted. Many things can lead to it:</p><ul><li>accidental wipe/format of the boot partition</li><li>accidental <code>dd</code> to a wrong drive (sure, you pressed ^C right away but your grub is gone, sorry)</li><li>exceedingly &ldquo;smart&rdquo; utilities overwriting MBR or re-initializing encrypted partitions</li><li>drive/memory failures (power outage, random bit flip, etc.)</li></ul><p>There are plenty of manuals on how to restore an accidentally wiped boot partition. However, more complicated cases (e.g. when <code>vgscan</code> can&rsquo;t find any LVM partitions) are not described as well, or sometimes wrongfully described as unrecoverable. The data is lost only when the LUKS header or encrypted bytes themselves are corrupted or overwritten, and encrypted data is usually recoverable even when the partitioning information is lost.</p><p><strong>Mandatory disclaimer:</strong> perform your data recovery on a cloned copy of the drive. If you don&rsquo;t know what you are doing &ndash; contact data recovery professionals. I am not responsible for any loss of data or loss of revenue or profit or any other damages, however caused.</p><h3 id=test-environment>Test environment</h3><p>Debian 10.3 is installed with a standard full disk encryption as a test environment:</p><p><img src=/images/debian-luks-installation.gif#center alt="debian luks installation"></p><p>Here&rsquo;s how partitions look after installation:</p><pre><code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0xf7251e65
+
+Device     Boot  Start      End  Sectors  Size Id Type
+/dev/sda1  *      2048   499711   497664  243M 83 Linux
+/dev/sda2       501758 16775167 16273410  7.8G  5 Extended
+/dev/sda5       501760 16775167 16273408  7.8G 83 Linux
+
+
+Disk /dev/mapper/sda5_crypt: 7.8 GiB, 8315207680 bytes, 16240640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/debian--vg-root: 6.7 GiB, 7226785792 bytes, 14114816 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/debian--vg-swap_1: 1020 MiB, 1069547520 bytes, 2088960 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+</code></pre><p>As a test file for recovery, 1GB file with random data is created in the home directory:</p><pre><code>user@debian:~$ head -c 1G &lt;/dev/urandom &gt;~/test_file
+user@debian:~$ md5sum ~/test_file
+20b731225ecb7260c1155da750f810d3  /home/user/test_file
+</code></pre><p>In order to test the worst (but still recoverable) failure, LVM partitioning metadata is erased. LUKS reserves 2 MiB for its headers and that area is preserved. The size of LVM metadata area is calculated using the output of <code>fdisk</code> from above:</p><pre><code>user@debian:~$ sudo dd if=/dev/zero of=/dev/sda5 bs=512 seek=4096 count=$(((8315207680-7226785792-1069547520)/512-4096))
+32768+0 records in
+32768+0 records out
+16777216 bytes (17 MB, 16 MiB) copied, 0.796235 s, 21.1 MB/s
+</code></pre><p>Finally, MBR is wiped:</p><pre><code>user@debian:~$ sudo dd if=/dev/zero of=/dev/sda bs=512 count=1
+1+0 records in
+1+0 records out
+512 bytes copied, 0.00791088 s, 64.7 kB/s
+</code></pre><p>Note that <code>/dev/sda</code> has no partition information left:</p><pre><code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/sda5_crypt: 7.8 GiB, 8315207680 bytes, 16240640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/debian--vg-root: 6.7 GiB, 7226785792 bytes, 14114816 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/debian--vg-swap_1: 1020 MiB, 1069547520 bytes, 2088960 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+</code></pre><p>After reboot, as expected, the system stops with an error:</p><pre><code>FATAL: No bootable media found! System halted.
+</code></pre><h3 id=finding-luks-partitions>Finding LUKS partitions</h3><p>The recovery is performed using gparted live-cd environment (iso-images are available from <a href=https://gparted.org>https://gparted.org</a>).</p><p>First, it is verified that there are indeed no partitions left on the drive (an extra 2GB disk represents a USB thumb drive in the output below):</p><pre><code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/sdb: 2 GiB, 2147483648 bytes, 4194304 sectors
+Disk model: HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x54c0d141
+
+Device     Boot Start     End Sectors Size Id Type
+/dev/sdb1        2048 4194303 4192256   2G  7 HPFS/NTFS/exFAT
+
+
+Disk /dev/loop0: 303.5 MiB, 317767680 bytes, 620640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+</code></pre><p>But the drive still contains the data. In order to locate partitions, we can use the fact that the first four bytes of any LUKS partition are always <code>0x4c 0x55 0x4b 0x53</code> or <code>LUKS</code> in ascii. It might take awhile to scan the entire drive, so as soon as the offset of LUKS partition is found, hexdump can be killed via <code>^C</code>.</p><pre><code>user@debian:~$ sudo hexdump -C /dev/sda | grep LUKS
+0f500000  4c 55 4b 53 ba be 00 02  00 00 00 00 00 00 40 00  |LUKS..........@.|
+^C
+</code></pre><p>Next, a loop device can be set up using the found offset. Note the <code>-r</code> option &ndash; it is safer to set up the device as read-only.</p><pre><code>user@debian:~$ sudo losetup -o 0xf500000 -r -f /dev/sda
+user@debian:~$ sudo losetup -a
+/dev/loop1: [0006]:10205 (/dev/sda), offset 256901120
+/dev/loop0: [2816]:4883 (/run/live/medium/live/filesystem.squashfs)
+</code></pre><p>Loop device <code>/dev/loop1</code> now contains bytes from the drive <code>/dev/sda</code>, starts at the offset <code>0xf500000</code> and spans to the rest of the drive. The beginning of LUKS partition is caught correctly, but not necessarily the end of it. In practice, this is not an issue.</p><h3 id=decrypting-luks-partitions>Decrypting LUKS partitions</h3><pre><code>user@debian:~$ sudo cryptsetup luksOpen /dev/loop1 recovery
+Enter passphrase for /dev/sda:
+</code></pre><p>At this stage, the passphrase is prompted and, if entered correctly, decrypted LVM partition is mapped to <code>/dev/mapper/recovery</code>:</p><pre><code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/sdb: 2 GiB, 2147483648 bytes, 4194304 sectors
+Disk model: HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x54c0d141
+
+Device     Boot Start     End Sectors Size Id Type
+/dev/sdb1        2048 4194303 4192256   2G  7 HPFS/NTFS/exFAT
+
+
+Disk /dev/loop0: 303.5 MiB, 317767680 bytes, 620640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/loop1: 7.78 GiB, 8333033472 bytes, 16275456 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+
+
+Disk /dev/mapper/recovery: 7.76 GiB, 8316256256 bytes, 16242688 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+</code></pre><p>It is unfortunately not mountable directly (even if LVM partition metadata wasn&rsquo;t damaged), since it contains multiple LVM logical volumes and therefore cannot be treated as a single partition.</p><p>LVM partition metadata was cleared so LVM tools cannot identify any volumes or groups:</p><pre><code>user@debian:~$ sudo pvscan
+  No matching physical volumes found
+user@debian:~$ sudo vgscan
+user@debian:~$ sudo lvscan
+</code></pre><p>However, this volume can be scanned directly and the files can be recovered using <code>testdisk</code> in few easy steps:</p><ul><li>mount external drive and launch testdisk:</li></ul><pre><code>user@debian:~$ sudo mkdir /media/external
+user@debian:~$ sudo mount -t ntfs /dev/sdb1 /media/external
+user@debian:~$ sudo testdisk
+</code></pre><ul><li>recover the test file:</li></ul><p><img src=/images/testdisk-recovery.gif#center alt="testdisk recovery"></p><ul><li>and verify its integrity:</li></ul><pre><code>user@debian:~$ md5sum /media/external/home/user/test_file
+20b731225ecb7260c1155da750f810d3  /media/external/home/user/test_file
+</code></pre><p>This approach is of course overkill in case of minor failures. E.g. if GRUB doesn&rsquo;t boot due to damaged <code>/boot</code> partition, it could be restored without loosing the base system using <code>grub-install</code>. However, if the partitioning metadata is lost, <code>testdisk</code> can help to quickly recover the files.</p><p>P.S. <a href=https://gitlab.com/cryptsetup/cryptsetup/-/wikis/FrequentlyAskedQuestions#6-backup-and-data-recovery>Set up you backups already!</a></p><hr></div></div><div class=row><div class=col-md-12 style=display:flex;justify-content:space-between><div>Tagged
+#<a href=/tags/linux>Linux</a>
+,
+#<a href=/tags/luks>LUKS</a>
+,
+#<a href=/tags/lvm>LVM</a>
+,
+#<a href=/tags/encryption>encryption</a>
+,
+#<a href=/tags/gparted>gparted</a>
+,
+#<a href=/tags/testdisk>testdisk</a>
+,
+#<a href=/tags/debian>debian</a></div><div><span class="label label-primary">2020-03-09</span></div></div></div><div class=row><div class=col-md-12><hr></div></div><div class=row><div class=col-md-12><div id=remark42></div></div></div></div><div class=container><div class="row col-md-12"><footer><div class=pull-left><p>&copy; 2021 Ruslan Nagimov ~ Powered By <a href=https://gohugo.io>Hugo</a> ~ <a href=https://creativecommons.org/licenses/by/4.0/>License: CC BY 4.0</a></p></div><div class=pull-right><a href=https://github.com/nagimov target=_blank><i class="fa fa-github-square fa-2x"></i></a></div></footer></div></div></body></html>

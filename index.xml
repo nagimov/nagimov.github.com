@@ -1,0 +1,1129 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>Spaghetti Code with Beer on Spaghetti Code with Beer</title><link>https://nagimov.me/</link><description>Recent content in Spaghetti Code with Beer on Spaghetti Code with Beer</description><generator>Hugo -- gohugo.io</generator><language>en-US</language><lastBuildDate>Sat, 01 Jan 2000 00:00:01 -0800</lastBuildDate><atom:link href="/" rel="self" type="application/rss+xml"/><item><title>Measure with Music: How to Read Analog Sensors Using a PC Sound Card</title><link>https://nagimov.me/post/measure-with-music-how-to-read-analog-sensors-using-a-pc-sound-card/</link><pubDate>Wed, 23 Jun 2021 22:59:42 -0700</pubDate><guid>https://nagimov.me/post/measure-with-music-how-to-read-analog-sensors-using-a-pc-sound-card/</guid><description>&lt;center>&lt;h4>(GIF for attention)&lt;/h4>&lt;/center>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/liquid_level.gif#center" alt="">&lt;/p>
+&lt;p>This post describes a simple method of reading resistive and capacitive sensors using a standard PC sound card. Virtually any desktop or laptop could be turned into a simple data acquisition system using this method. Thanks to moderate system requirements, even the very old computers can be repurposed for this application. Socket 478 based platforms from early 2000&amp;rsquo;s with integrated sound cards are readily available for ~free from recycling bins and are perfectly capable of running the data acquisition software (thankfully, Debian still supports 32-bit platforms). With the total cost of other components under $1, this can hopefully bring affordable and interactive data acquisition to DIYers, experimenters and students in science and physics classes. I do not recommend (in fact, I highly discourage) using this method for anything but educational purposes. It is not meant to be used for industrial or even lab data acquisition &amp;ndash; there are much better alternatives.&lt;/p>
+&lt;p>Another point of this post is to demonstrate that old PC motherboards are under-appreciated in DIY circles. Even the older ATX motherboards are equipped with many useful capabilities:&lt;/p>
+&lt;ul>
+&lt;li>audio ADCs and DACs (AC-coupled)&lt;/li>
+&lt;li>DC voltage DACs for fan speed control&lt;/li>
+&lt;li>hall effect sensor encoders for fan RPM readback&lt;/li>
+&lt;li>PWM outputs for RPM control on 4-pin fan headers&lt;/li>
+&lt;li>&lt;a href="https://blog.atx.name/twilight-vga-i2c-breakout-board/">I2C busses in video ports&lt;/a>&lt;/li>
+&lt;li>dry contact inputs: &amp;ldquo;chassis intrusion&amp;rdquo; switches, audio jack detection contacts on front panel audio headers&lt;/li>
+&lt;li>multiple voltage references (~1V core and memory voltages, 3.3V, 5V, 12V)&lt;/li>
+&lt;/ul>
+&lt;p>In addition, newer motherboards are equipped with goodies like thermistor inputs (e.g. headers T_SEN1, T_SEN2, etc. on MSI motherboards) that might not necessarily measure temperatures of water cooling loops :)&lt;/p>
+&lt;p>Example circuits are purposefully simplified to utilize only widely available passive components. While the quality of signal processing can be improved by introducing simple buffering and amplification, additional opamps and voltage sources would unnecessarily complicate the method, introduce additional expenses, and require more advanced electronics and soldering skills to implement. Simplicity of using only passive networks is a desired feature, and not a bug.&lt;/p>
+&lt;p>&lt;strong>The text, illustrations, schematics and code snippets of this post are provided &amp;ldquo;as-is&amp;rdquo; without warranty of any kind. Please refer to the &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/LICENSE">LICENSE&lt;/a> before using any of it.&lt;/strong>&lt;/p>
+&lt;p>The code is available &lt;a href="https://github.com/nagimov/sound-card-daq">on github&lt;/a>.&lt;/p>
+&lt;h3 id="toc">TOC&lt;/h3>
+&lt;!-- MarkdownTOC autolink="true" -->
+&lt;ul>
+&lt;li>&lt;a href="#pc-sound-cards-and-audio-interfaces">PC sound cards and audio interfaces&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#hardware-and-software">Hardware and software&lt;/a>
+&lt;ul>
+&lt;li>&lt;a href="#sound-card-io">Sound card I/O&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#sensors-and-passives">Sensors and passives&lt;/a>&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;li>&lt;a href="#reading-resistive-sensors">Reading resistive sensors&lt;/a>
+&lt;ul>
+&lt;li>&lt;a href="#circuit-design">Circuit design&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#hardware-setup">Hardware setup&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#software-setup">Software setup&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#module-description">Module description&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#adjusting-input-gain">Adjusting input gain&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#temperature-measurement">Temperature measurement&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#measurement-errors">Measurement errors&lt;/a>&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;li>&lt;a href="#reading-capacitive-or-inductive-sensors">Reading capacitive or inductive sensors&lt;/a>
+&lt;ul>
+&lt;li>&lt;a href="#measuring-frequency-response">Measuring frequency response&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#capacitance-or-inductance-measurements">Capacitance or inductance measurements&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#circuit-design-1">Circuit design&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#hardware-setup-1">Hardware setup&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#software-setup-1">Software setup&lt;/a>&lt;/li>
+&lt;li>&lt;a href="#water-level-measurement">Water level measurement&lt;/a>&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;li>&lt;a href="#troubleshooting">Troubleshooting&lt;/a>&lt;/li>
+&lt;/ul>
+&lt;!-- /MarkdownTOC -->
+&lt;h3 id="pc-sound-cards-and-audio-interfaces">PC sound cards and audio interfaces&lt;/h3>
+&lt;p>PC sound cards can be useful for projects that require kHz-rate analog inputs (see &lt;a href="https://homediyelectronics.com/projects/howtomakeafreesoundcardpcoscilloscope/">DIY oscilloscope&lt;/a>). However they can&amp;rsquo;t be directly used for measuring DC signals since audio ADCs reject the DC component. Hence, the consensus is that sound cards are useless for reading any sensors, and DIY monitoring projects are usually based on ubiquitous Arduinos and Raspberry Pies.&lt;/p>
+&lt;p>However, the majority of sensors aren&amp;rsquo;t inherently DC. Standardized sensor interfaces use DC signals (0-5V, 0-10V, 4-20mA) due to simplicity of measuring and generating DC voltages and currents. Many underlying sensing elements are inherently resistive (thermistors, strain gauges in force and pressure transducers, potentiometers, light dependent resistors, etc.), capacitive (non-contact displacement sensors, proximity sensors, flow meters, level sensors, accelerometers, etc.) or inductive. The convention of reading sensors using DC signals is merely a convenience.&lt;/p>
+&lt;p>This post demonstrates the approach to reading such sensors using a PC sound card. A 10k thermistor and a DIY level probe are used in this example, but these methods can be extended to any resistive, capacitive and inductive measurements.&lt;/p>
+&lt;h3 id="hardware-and-software">Hardware and software&lt;/h3>
+&lt;p>The system is based on a standard PC with an integrated sound card. I use an old AM2 motherboard running Debian, but this should work on any modern Linux distribution. The only OS-dependent part is the interface for playing/recording wav files to/from the sound card using PulseAudio. This could be adapted to work with the Windows sound subsystem as well.&lt;/p>
+&lt;p>I conventionally use python with numpy, scipy and matplotlib to glue the pieces together.&lt;/p>
+&lt;h4 id="sound-card-io">Sound card I/O&lt;/h4>
+&lt;p>There are a few ways to physically interface with the sound card:&lt;/p>
+&lt;ul>
+&lt;li>use audio pig tail cables plugged into 3.5mm audio jacks (could be salvaged from old speakers, headphones, etc.)&lt;/li>
+&lt;li>use dupont style sockets plugged into motherboard audio headers (could be salvaged from old PC cases)
+&lt;ul>
+&lt;li>note: make sure to activate front panel audio ports &lt;a href="https://www.intel.com/content/www/us/en/support/articles/000005512/boards-and-kits/desktop-boards.html">by connecting &lt;code>SENSE_SEND&lt;/code> to &lt;code>SENSE1_RETURN&lt;/code> and &lt;code>SENSE2_RETURN&lt;/code> pins&lt;/a> when using HD Audio headers.&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;h4 id="sensors-and-passives">Sensors and passives&lt;/h4>
+&lt;p>I use a standard 10kΩ NTC thermistor salvaged from a digital thermometer as an example of a resistive sensor. These thermistors can be found for less than a dollar apiece on amazon or ebay.&lt;/p>
+&lt;p>A level probe sensor is made from two pieces of aluminum foil (available from your kitchen drawers) glued onto plastic frames (can be 3d-printed or cut from a thin sheet of plastic &amp;ndash; milk jug, old credit card, etc.).&lt;/p>
+&lt;p>Required passive components:&lt;/p>
+&lt;ul>
+&lt;li>three 10kΩ resistors for thermistor measurements&lt;/li>
+&lt;li>one ~1mH inductor and one ~100nF capacitor for level probe measurements
+&lt;ul>
+&lt;li>note: different combinations of inductance and capacitance can be used as well (see &lt;a href="#circuit-design-1">Circuit design&lt;/a>)&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;h3 id="reading-resistive-sensors">Reading resistive sensors&lt;/h3>
+&lt;h4 id="circuit-design">Circuit design&lt;/h4>
+&lt;p>Resistance can be measured using an AC voltage source and AC voltmeter in a simple voltage divider arrangement:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/ac-bridge.png#center" alt="">&lt;/p>
+&lt;p>The sound card output is used as the AC voltage source and its input is used as the voltmeter. A typical impedance of sound card outputs is under 0.1kΩ and it can be safely excluded from the equation. An input impedance is usually at the order of 10kΩ, so technically it should be considered for in resistance calculations. In practice, ignoring the input impedance results in errors of less than 1°C for the temperature range from -25°C to +25°C, and less than 2°C for temperatures below +35°C.&lt;/p>
+&lt;p>There is however one problem with this approach. Due to highly adjustable gain of audio DACs and ADCs (aka volume control), signal amplitudes cannot be easily converted to voltages and vice versa. E.g., audio output of my desktop has the RMS voltage around 1.2V at its max volume, but my laptop isn&amp;rsquo;t guaranteed to have the same voltage. In audio terms, this results in slight volume variations which isn&amp;rsquo;t a big deal. However these variations could introduce significant errors to resistance measurements.&lt;/p>
+&lt;p>We can of course measure the gain of audio input/output directly using a voltmeter. That would work, but such setup wouldn&amp;rsquo;t be portable since the measured gain would only describe the one particular system.&lt;/p>
+&lt;p>Another solution is to measure the ratio of input to output gains using a voltage divider with known resistors. This ratio can be used to determine the ratio of input to output voltages and calculate the unknown resistance. Thanks to the two available audio channels on stereo inputs and outputs, one channel can be used to determine the gain ratio and another one to measure the resistance.&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/audio-channels.png#center" alt="">&lt;/p>
+&lt;h4 id="hardware-setup">Hardware setup&lt;/h4>
+&lt;p>I used an audio breakout board with two 3.5mm ports to simplify the assembly:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/thermistor-breakout-board.png#center" alt="">&lt;/p>
+&lt;p>Resistors R1, R2 and R3 are soldered directly on the board (R2 is in 0603 SMD package and is hard to see on the picture). Thermistor is connected to header pins. Input and output 3.5mm plugs are connected to the sound card using audio cables.&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/thermistor-assembly.png#center" alt="">&lt;/p>
+&lt;h4 id="software-setup">Software setup&lt;/h4>
+&lt;p>&lt;strong>NOTE:&lt;/strong> Make sure that both input and output jacks are plugged in before continuing. PulseAudio recognizes if ports are unplugged and deactivates them accordingly.&lt;/p>
+&lt;p>To communicate with the sound card, input and output devices must be identified. PulseAudio commands &lt;code>pacmd list-sinks&lt;/code> and &lt;code>pacmd list-sources&lt;/code> can be used to display available devices:&lt;/p>
+&lt;pre>&lt;code>$ pacmd list-sinks | grep name:
+name: &amp;lt;alsa_output.pci-0000_00_07.0.analog-stereo&amp;gt;
+$ pacmd list-sources | grep name: | grep -v monitor
+name: &amp;lt;alsa_input.pci-0000_00_07.0.analog-stereo&amp;gt;
+&lt;/code>&lt;/pre>&lt;p>In my case, the output device is &lt;code>alsa_output.pci-0000_00_07.0.analog-stereo&lt;/code> and the input device is &lt;code>alsa_input.pci-0000_00_07.0.analog-stereo&lt;/code>. These names should be specified in the &lt;code>$HOME/soundcard.cfg&lt;/code> file in the following format (&lt;code>vol_record&lt;/code> parameter is configured later):&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-INI" data-lang="INI">&lt;span style="color:#007020;font-weight:bold">[SOUNDCARD]&lt;/span>
+&lt;span style="color:#4070a0">pa_sink&lt;/span> &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">alsa_output.pci-0000_00_07.0.analog-stereo&lt;/span>
+&lt;span style="color:#4070a0">pa_source&lt;/span> &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">alsa_input.pci-0000_00_07.0.analog-stereo&lt;/span>
+&lt;span style="color:#4070a0">vol_record&lt;/span> &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">-1&lt;/span>
+&lt;/code>&lt;/pre>&lt;/div>&lt;h4 id="module-description">Module description&lt;/h4>
+&lt;p>All of the python glue is combined into a simple &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/soundcard.py">&lt;code>soundcard.py&lt;/code> module&lt;/a> with a handful of constants and functions.&lt;/p>
+&lt;p>Imports are as follows (&lt;code>numpy&lt;/code> is used for array manipulation and &lt;code>scipy&lt;/code> provides a convenient &lt;code>wavfile&lt;/code> interface):&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">configparser&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">os&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">subprocess&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">time&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">from&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">scipy.io&lt;/span> &lt;span style="color:#007020;font-weight:bold">import&lt;/span> wavfile
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>Constants specify the file locations, define the standard 44.1kHz PCM WAV format and time delays:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">CFG_FILE &lt;span style="color:#666">=&lt;/span> os&lt;span style="color:#666">.&lt;/span>path&lt;span style="color:#666">.&lt;/span>join(os&lt;span style="color:#666">.&lt;/span>environ[&lt;span style="color:#4070a0">&amp;#39;HOME&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;soundcard.cfg&amp;#39;&lt;/span>)
+WAV_FILE_OUT &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">&amp;#39;/tmp/out.wav&amp;#39;&lt;/span>
+WAV_FILE_IN &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">&amp;#39;/tmp/in.wav&amp;#39;&lt;/span>
+SAMPLE_RATE &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">44100&lt;/span>
+BIT_DEPTH &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>int16
+WAV_FORMAT &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#4070a0">&amp;#39;s16ne&amp;#39;&lt;/span>
+VOL_PLAY &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2&lt;/span> &lt;span style="color:#666">**&lt;/span> &lt;span style="color:#40a070">16&lt;/span> &lt;span style="color:#666">-&lt;/span> &lt;span style="color:#40a070">1&lt;/span>
+DURATION_RECORD &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2&lt;/span>
+PAUSE_PRE_PLAY &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2&lt;/span>
+PAUSE_PRE_RECORD &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2&lt;/span>
+PAUSE_POST_RECORD &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2&lt;/span>
+DURATION_PLAY &lt;span style="color:#666">=&lt;/span> DURATION_RECORD &lt;span style="color:#666">+&lt;/span> PAUSE_PRE_RECORD &lt;span style="color:#666">+&lt;/span> PAUSE_POST_RECORD
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The config file is parsed and verifed using the &lt;code>configparser&lt;/code> module:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">config &lt;span style="color:#666">=&lt;/span> configparser&lt;span style="color:#666">.&lt;/span>ConfigParser()
+config&lt;span style="color:#666">.&lt;/span>read(CFG_FILE)
+PA_SINK &lt;span style="color:#666">=&lt;/span> config&lt;span style="color:#666">.&lt;/span>get(&lt;span style="color:#4070a0">&amp;#39;SOUNDCARD&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;PA_SINK&amp;#39;&lt;/span>, fallback&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span>)
+PA_SOURCE &lt;span style="color:#666">=&lt;/span> config&lt;span style="color:#666">.&lt;/span>get(&lt;span style="color:#4070a0">&amp;#39;SOUNDCARD&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;PA_SOURCE&amp;#39;&lt;/span>, fallback&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span>)
+VOL_RECORD &lt;span style="color:#666">=&lt;/span> config&lt;span style="color:#666">.&lt;/span>getint(&lt;span style="color:#4070a0">&amp;#39;SOUNDCARD&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;VOL_RECORD&amp;#39;&lt;/span>, fallback&lt;span style="color:#666">=-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> PA_SINK &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span> &lt;span style="color:#007020;font-weight:bold">or&lt;/span> PA_SOURCE &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span> &lt;span style="color:#007020;font-weight:bold">or&lt;/span> VOL_RECORD &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>:
+config[&lt;span style="color:#4070a0">&amp;#39;SOUNDCARD&amp;#39;&lt;/span>] &lt;span style="color:#666">=&lt;/span> {&lt;span style="color:#4070a0">&amp;#39;PA_SINK&amp;#39;&lt;/span>: PA_SINK, &lt;span style="color:#4070a0">&amp;#39;PA_SOURCE&amp;#39;&lt;/span>: PA_SOURCE, &lt;span style="color:#4070a0">&amp;#39;VOL_RECORD&amp;#39;&lt;/span>: VOL_RECORD}
+&lt;span style="color:#007020;font-weight:bold">with&lt;/span> &lt;span style="color:#007020">open&lt;/span>(CFG_FILE, &lt;span style="color:#4070a0">&amp;#39;w&amp;#39;&lt;/span>) &lt;span style="color:#007020;font-weight:bold">as&lt;/span> cfg:
+config&lt;span style="color:#666">.&lt;/span>write(cfg)
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> PA_SINK &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span> &lt;span style="color:#007020;font-weight:bold">or&lt;/span> PA_SOURCE &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#4070a0">&amp;#39;&amp;#39;&lt;/span>:
+&lt;span style="color:#007020;font-weight:bold">raise&lt;/span> &lt;span style="color:#007020">ValueError&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;PA_SINK or PA_SOURCE are not set! Specify PulseAudio devices in {CFG_FILE}&amp;#39;&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The following functions define the waveforms to be played over the audio output. A pure sine wave is an obvious choice, and a 440Hz (middle C) is a perfect pitch for the task. White noise is defined here as well &amp;ndash; it is a useful test signal for frequency response measurements:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">sine_wave&lt;/span>(frequency&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">440&lt;/span>):
+time_points &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>linspace(&lt;span style="color:#40a070">0&lt;/span>, DURATION_PLAY, SAMPLE_RATE &lt;span style="color:#666">*&lt;/span> DURATION_PLAY)
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> np&lt;span style="color:#666">.&lt;/span>iinfo(BIT_DEPTH)&lt;span style="color:#666">.&lt;/span>max &lt;span style="color:#666">*&lt;/span> np&lt;span style="color:#666">.&lt;/span>sin(frequency &lt;span style="color:#666">*&lt;/span> &lt;span style="color:#40a070">2&lt;/span> &lt;span style="color:#666">*&lt;/span> np&lt;span style="color:#666">.&lt;/span>pi &lt;span style="color:#666">*&lt;/span> time_points)
+&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">white_noise&lt;/span>():
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> np&lt;span style="color:#666">.&lt;/span>random&lt;span style="color:#666">.&lt;/span>uniform(np&lt;span style="color:#666">.&lt;/span>iinfo(BIT_DEPTH)&lt;span style="color:#666">.&lt;/span>min, np&lt;span style="color:#666">.&lt;/span>iinfo(BIT_DEPTH)&lt;span style="color:#666">.&lt;/span>max, SAMPLE_RATE &lt;span style="color:#666">*&lt;/span> DURATION_PLAY)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>After playing this waveform through the sound card and recording it back, we need to make sure that the recorded sine wave isn&amp;rsquo;t clipped, otherwise the output amplitude won&amp;rsquo;t be determined correctly. This might happen if the recording level is too high. This function verifies that the waveform fits between the max and min values of 16-bit PCM WAV file:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">is_waveform_clipped&lt;/span>(waveform):
+clipped_top &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>max(waveform) &lt;span style="color:#666">&amp;gt;=&lt;/span> np&lt;span style="color:#666">.&lt;/span>iinfo(BIT_DEPTH)&lt;span style="color:#666">.&lt;/span>max
+clipped_bottom &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>min(waveform) &lt;span style="color:#666">&amp;lt;=&lt;/span> np&lt;span style="color:#666">.&lt;/span>iinfo(BIT_DEPTH)&lt;span style="color:#666">.&lt;/span>min
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> clipped_top &lt;span style="color:#007020;font-weight:bold">or&lt;/span> clipped_bottom
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The simplest way to play/record the waveforms to/from the sound card is to use &lt;code>paplay&lt;/code> and &lt;code>parecord&lt;/code>. These commands only work with wav files, so &lt;code>scipy.io.wavfile&lt;/code> is used to convert the files to numpy arrays and vice versa. Prior to playing and recording the signal, input and output levels are adjusted to predefined levels using &lt;code>pacmd set-sink-volume&lt;/code> and &lt;code>pacmd set-source-volume&lt;/code>:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">write_waveform&lt;/span>(waveform):
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> os&lt;span style="color:#666">.&lt;/span>path&lt;span style="color:#666">.&lt;/span>exists(WAV_FILE_OUT):
+os&lt;span style="color:#666">.&lt;/span>remove(WAV_FILE_OUT)
+wavfile&lt;span style="color:#666">.&lt;/span>write(WAV_FILE_OUT, SAMPLE_RATE, np&lt;span style="color:#666">.&lt;/span>hstack((waveform, waveform))&lt;span style="color:#666">.&lt;/span>astype(BIT_DEPTH))
+&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">play_wav&lt;/span>():
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pacmd&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;set-sink-volume&amp;#39;&lt;/span>, PA_SINK, &lt;span style="color:#4070a0">&amp;#39;0&amp;#39;&lt;/span>])
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pacmd&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;set-sink-volume&amp;#39;&lt;/span>, PA_SINK, f&lt;span style="color:#4070a0">&amp;#39;{int(VOL_PLAY)}&amp;#39;&lt;/span>])
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;paplay&amp;#39;&lt;/span>, WAV_FILE_OUT, f&lt;span style="color:#4070a0">&amp;#39;--device={PA_SINK}&amp;#39;&lt;/span>])
+&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">record_wav&lt;/span>():
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> VOL_RECORD &lt;span style="color:#666">==&lt;/span> &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>:
+&lt;span style="color:#007020;font-weight:bold">raise&lt;/span> &lt;span style="color:#007020">ValueError&lt;/span>(&lt;span style="color:#4070a0">&amp;#39;VOL_RECORD parameter is not set! Use gain_tune.py to configure recording gain&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> os&lt;span style="color:#666">.&lt;/span>path&lt;span style="color:#666">.&lt;/span>exists(WAV_FILE_IN):
+os&lt;span style="color:#666">.&lt;/span>remove(WAV_FILE_IN)
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pacmd&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;set-source-volume&amp;#39;&lt;/span>, PA_SOURCE, &lt;span style="color:#4070a0">&amp;#39;0&amp;#39;&lt;/span>])
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pacmd&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;set-source-volume&amp;#39;&lt;/span>, PA_SOURCE, f&lt;span style="color:#4070a0">&amp;#39;{int(VOL_RECORD)}&amp;#39;&lt;/span>])
+subprocess&lt;span style="color:#666">.&lt;/span>Popen(
+[
+&lt;span style="color:#4070a0">&amp;#39;parecord&amp;#39;&lt;/span>,
+f&lt;span style="color:#4070a0">&amp;#39;--device={PA_SOURCE}&amp;#39;&lt;/span>,
+f&lt;span style="color:#4070a0">&amp;#39;--rate={SAMPLE_RATE}&amp;#39;&lt;/span>,
+f&lt;span style="color:#4070a0">&amp;#39;--format={WAV_FORMAT}&amp;#39;&lt;/span>,
+&lt;span style="color:#4070a0">&amp;#39;--channels=2&amp;#39;&lt;/span>,
+f&lt;span style="color:#4070a0">&amp;#39;--process-time-msec={DURATION_RECORD*1000}&amp;#39;&lt;/span>,
+WAV_FILE_IN,
+]
+)
+&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">read_waveform&lt;/span>():
+_, waveform &lt;span style="color:#666">=&lt;/span> wavfile&lt;span style="color:#666">.&lt;/span>read(WAV_FILE_IN)
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> waveform
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>Next function combines the following tasks:&lt;/p>
+&lt;ul>
+&lt;li>accept waveform numpy array parameter and save it to wav file&lt;/li>
+&lt;li>start playing wav file to line output&lt;/li>
+&lt;li>wait for output to stabilize&lt;/li>
+&lt;li>start recording to wav file from line input&lt;/li>
+&lt;li>wait while signal is being recorded&lt;/li>
+&lt;li>stop recording process&lt;/li>
+&lt;li>convert recorded wav file to numpy array&lt;/li>
+&lt;li>wait for sound to finish playing and stop PulseAudio player&lt;/li>
+&lt;li>verify that recorded waveform isn&amp;rsquo;t clipped&lt;/li>
+&lt;/ul>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">play_and_record&lt;/span>(waveform):
+write_waveform(waveform)
+time&lt;span style="color:#666">.&lt;/span>sleep(PAUSE_PRE_PLAY)
+play_wav()
+time&lt;span style="color:#666">.&lt;/span>sleep(PAUSE_PRE_RECORD)
+record_wav()
+time&lt;span style="color:#666">.&lt;/span>sleep(DURATION_RECORD)
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pkill&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;parecord&amp;#39;&lt;/span>])
+time&lt;span style="color:#666">.&lt;/span>sleep(PAUSE_POST_RECORD)
+new_waveform &lt;span style="color:#666">=&lt;/span> read_waveform()
+subprocess&lt;span style="color:#666">.&lt;/span>Popen([&lt;span style="color:#4070a0">&amp;#39;pkill&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;paplay&amp;#39;&lt;/span>])
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> is_waveform_clipped(new_waveform):
+&lt;span style="color:#007020;font-weight:bold">raise&lt;/span> &lt;span style="color:#007020">ValueError&lt;/span>(&lt;span style="color:#4070a0">&amp;#39;Recorded waveform is clipped - reduce VOL_RECORD parameter&amp;#39;&lt;/span>)
+new_waveform_L &lt;span style="color:#666">=&lt;/span> new_waveform&lt;span style="color:#666">.&lt;/span>astype(&lt;span style="color:#4070a0">&amp;#39;int&amp;#39;&lt;/span>)[:, &lt;span style="color:#40a070">0&lt;/span>]
+new_waveform_R &lt;span style="color:#666">=&lt;/span> new_waveform&lt;span style="color:#666">.&lt;/span>astype(&lt;span style="color:#4070a0">&amp;#39;int&amp;#39;&lt;/span>)[:, &lt;span style="color:#40a070">1&lt;/span>]
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> new_waveform_L, new_waveform_R
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>Finally, a simple helper function is defined to calculate RMS values of waveforms:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">rms&lt;/span>(waveform):
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> np&lt;span style="color:#666">.&lt;/span>sqrt(np&lt;span style="color:#666">.&lt;/span>mean(np&lt;span style="color:#666">.&lt;/span>square(waveform)))
+&lt;/code>&lt;/pre>&lt;/div>&lt;h4 id="adjusting-input-gain">Adjusting input gain&lt;/h4>
+&lt;p>To maximize the resolution of audio waveforms, recording levels should be adjusted in a way that scales input signal amplitudes close to the maximum range of 16-bit PCM WAV format. This is done by repeatedly playing and recording the sine wave while adjusting the recording level and testing the input for clipping. The &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/gain_tune.py">&lt;code>gain_tune.py&lt;/code> script&lt;/a> tests multiple recording levels until it finds the highest one that doesn&amp;rsquo;t clip the signal. Recording level is then saved to the &lt;code>$HOME/soundcard.cfg&lt;/code> config file:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">configparser&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">subprocess&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">time&lt;/span>
+MARGIN &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">0.75&lt;/span>
+STEPS_TOTAL &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">5&lt;/span>
+step &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">0&lt;/span>
+lo, hi &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">0&lt;/span>, &lt;span style="color:#40a070">65535&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">while&lt;/span> True:
+vol_current &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#007020">int&lt;/span>((hi &lt;span style="color:#666">+&lt;/span> lo) &lt;span style="color:#666">/&lt;/span> &lt;span style="color:#40a070">2&lt;/span>)
+sc&lt;span style="color:#666">.&lt;/span>VOL_RECORD &lt;span style="color:#666">=&lt;/span> vol_current
+&lt;span style="color:#007020;font-weight:bold">try&lt;/span>:
+w_L, w_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave())
+rms_L, rms_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>rms(w_L), sc&lt;span style="color:#666">.&lt;/span>rms(w_R)
+lo &lt;span style="color:#666">=&lt;/span> vol_current
+step &lt;span style="color:#666">+=&lt;/span> &lt;span style="color:#40a070">1&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;no clipping detected at VOL_RECORD = {vol_current}, rms_L = {rms_L:.2f}, rms_R = {rms_R:.2f}&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">except&lt;/span> &lt;span style="color:#007020">ValueError&lt;/span>:
+hi &lt;span style="color:#666">=&lt;/span> vol_current
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;clipping detected at VOL_RECORD = {vol_current}&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> step &lt;span style="color:#666">&amp;gt;&lt;/span> STEPS_TOTAL:
+vol_current &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#007020">int&lt;/span>(sc&lt;span style="color:#666">.&lt;/span>VOL_RECORD &lt;span style="color:#666">*&lt;/span> MARGIN)
+sc&lt;span style="color:#666">.&lt;/span>config[&lt;span style="color:#4070a0">&amp;#39;SOUNDCARD&amp;#39;&lt;/span>][&lt;span style="color:#4070a0">&amp;#39;VOL_RECORD&amp;#39;&lt;/span>] &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#007020">str&lt;/span>(vol_current)
+&lt;span style="color:#007020;font-weight:bold">with&lt;/span> &lt;span style="color:#007020">open&lt;/span>(sc&lt;span style="color:#666">.&lt;/span>CFG_FILE, &lt;span style="color:#4070a0">&amp;#39;w&amp;#39;&lt;/span>) &lt;span style="color:#007020;font-weight:bold">as&lt;/span> cfg:
+sc&lt;span style="color:#666">.&lt;/span>config&lt;span style="color:#666">.&lt;/span>write(cfg)
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;VOL_RECORD value {vol_current} saved to {sc.CFG_FILE}&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">break&lt;/span>
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The level should also be adjusted for variabilities of input amplitude. In this case, they are caused by temperature variations. I use the thermistor to monitor outside temperatures: assuming high of 40°C on the worst summer day, the lowest corresponding resistance of 10kΩ thermistor is ~5kΩ. &lt;code>MARGIN&lt;/code> is adjusted to reflect the voltage ratio of reference to measurement channels for this condition (adjust this margin accordingly for your sensors):&lt;/p>
+&lt;pre>&lt;code>(10 kΩ / (10 kΩ + 10 kΩ)) / (10 kΩ / (5 kΩ + 10 kΩ)) = 0.75
+&lt;/code>&lt;/pre>&lt;p>The tuning script performs a binary search until the gain is determined with specified accuracy (determined by &lt;code>STEPS_TOTAL&lt;/code>):&lt;/p>
+&lt;pre>&lt;code>$ cat ~/soundcard.cfg | grep vol_record
+vol_record = -1
+$ python3 gain_tune.py
+clipping detected at VOL_RECORD = 32767
+no clipping detected at VOL_RECORD = 16383, rms_L = 5516.48, rms_R = 5291.19
+no clipping detected at VOL_RECORD = 24575, rms_L = 18677.35, rms_R = 17995.21
+clipping detected at VOL_RECORD = 28671
+clipping detected at VOL_RECORD = 26623
+no clipping detected at VOL_RECORD = 25599, rms_L = 21104.81, rms_R = 20477.67
+no clipping detected at VOL_RECORD = 26111, rms_L = 22477.60, rms_R = 22008.95
+clipping detected at VOL_RECORD = 26367
+no clipping detected at VOL_RECORD = 26239, rms_L = 22470.11, rms_R = 22005.82
+no clipping detected at VOL_RECORD = 26303, rms_L = 22469.06, rms_R = 22005.82
+VOL_RECORD value 19727 saved to /home/nagimov/soundcard.cfg
+$ cat ~/soundcard.cfg | grep vol_record
+vol_record = 19727
+&lt;/code>&lt;/pre>&lt;h4 id="temperature-measurement">Temperature measurement&lt;/h4>
+&lt;p>Resistance values of &lt;code>R_1&lt;/code>, &lt;code>R_2&lt;/code> and &lt;code>R_3&lt;/code> are measured directly and used in the &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/thermistor.py">&lt;code>thermistor.py&lt;/code> script&lt;/a> to slightly improve the accuracy. &lt;a href="https://en.wikipedia.org/wiki/Steinhart%E2%80%93Hart_equation">Steinhart-Hart equation&lt;/a> is used for resistance-to-temperature conversion:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+R_1 &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">9.95e3&lt;/span>
+R_2 &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">10.0e3&lt;/span>
+R_3 &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">9.94e3&lt;/span>
+A &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">2.108508173e-3&lt;/span>
+B &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">0.7979204727e-4&lt;/span>
+C &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">6.535076315e-7&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">while&lt;/span> True:
+w_L, w_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave())
+rms_L, rms_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>rms(w_L), sc&lt;span style="color:#666">.&lt;/span>rms(w_R)
+gain_ratio &lt;span style="color:#666">=&lt;/span> rms_R &lt;span style="color:#666">*&lt;/span> (R_1 &lt;span style="color:#666">+&lt;/span> R_2) &lt;span style="color:#666">/&lt;/span> R_2
+R_NTC &lt;span style="color:#666">=&lt;/span> R_3 &lt;span style="color:#666">*&lt;/span> (gain_ratio &lt;span style="color:#666">/&lt;/span> rms_L &lt;span style="color:#666">-&lt;/span> &lt;span style="color:#40a070">1&lt;/span>)
+T_NTC &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">1&lt;/span> &lt;span style="color:#666">/&lt;/span> (A &lt;span style="color:#666">+&lt;/span> B &lt;span style="color:#666">*&lt;/span> np&lt;span style="color:#666">.&lt;/span>log(R_NTC) &lt;span style="color:#666">+&lt;/span> C &lt;span style="color:#666">*&lt;/span> np&lt;span style="color:#666">.&lt;/span>log(R_NTC) &lt;span style="color:#666">**&lt;/span> &lt;span style="color:#40a070">3&lt;/span>) &lt;span style="color:#666">-&lt;/span> &lt;span style="color:#40a070">273.15&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;R_NTC = {R_NTC:.1f} Ohm, T_NTC = {T_NTC:.1f} C&amp;#39;&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;h4 id="measurement-errors">Measurement errors&lt;/h4>
+&lt;p>To simplify the measurement, impedance of the sound card input is not accounted for. Measurement errors caused by this are tolerable for the ambient temperature monitoring.&lt;/p>
+&lt;p>Estimated measurement errors in the range from 1kΩ to 100kΩ (defined using an Ohm-meter and an adjustable potentiometer):&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/thermistor_error_R.png#center" alt="">&lt;/p>
+&lt;p>Same measurement errors represented in temperature units in the range from -25°C to +35°C:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/thermistor_error_T.png#center" alt="">&lt;/p>
+&lt;p>Errors caused by the unknown input impedance can be evaluated similarly for other kinds of measurements. These errors can be reduced by substracting the above error curves from measurements. Another method is to define the input impedance by measuring a known resistance and adjusting for the additional voltage drop at the input side.&lt;/p>
+&lt;h3 id="reading-capacitive-or-inductive-sensors">Reading capacitive or inductive sensors&lt;/h3>
+&lt;p>For resistance measurements, the AC signal from the sound card was fixed at 440Hz, since resistive circuits (i.e. without inductance and capacitance) are not affected by signal frequency. For circuits with capacitors or inductors this is not the case &amp;ndash; their behavior is frequency dependent. This fact could be exploited to read such sensors by measuring their frequency response characteristics. Since sound cards can both generate and record AC signals at various frequencies, they can be used to measure capacitance and inductance. Note that the usable frequency range of audio equipment (including PC sound cards) is limited to the range of audible frequencies: from ~20Hz to ~20,000Hz. The exact low and high limits are hardware-dependent and can be determined experimentally.&lt;/p>
+&lt;h4 id="measuring-frequency-response">Measuring frequency response&lt;/h4>
+&lt;p>The frequency of output audio signal can be adjusted in the code by supplying an optional &lt;code>freq&lt;/code> parameter to the &lt;code>sine_wave()&lt;/code> function. To measure the frequency response characteristic of circuits, the output signal frequency is varied in steps within defined limits and the input amplitude is measured at each step.&lt;/p>
+&lt;p>In the first demonstration, the sound card itself is characterized for the frequency response. In this measurement, the output of the sound card is connected directly to its input using an audio cable. With no circuitry in between, this measurement describes the combined frequency response of the DAC and ADC circuits of the sound card.&lt;/p>
+&lt;p>The first step is to re-tune the recording gain using the &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/gain_tune.py">&lt;code>gain_tune.py&lt;/code> script&lt;/a>:&lt;/p>
+&lt;pre>&lt;code>$ python3 gain_tune.py
+clipping detected at VOL_RECORD = 32767
+no clipping detected at VOL_RECORD = 16383, rms_L = 11937.79, rms_R = 11494.02
+clipping detected at VOL_RECORD = 24575
+clipping detected at VOL_RECORD = 20479
+no clipping detected at VOL_RECORD = 18431, rms_L = 17088.12, rms_R = 16542.01
+no clipping detected at VOL_RECORD = 19455, rms_L = 20112.67, rms_R = 19555.55
+no clipping detected at VOL_RECORD = 19967, rms_L = 21752.07, rms_R = 21287.34
+no clipping detected at VOL_RECORD = 20223, rms_L = 22599.30, rms_R = 22116.54
+no clipping detected at VOL_RECORD = 20351, rms_L = 23028.75, rms_R = 22536.46
+VOL_RECORD value 15263 saved to /home/nagimov/soundcard.cfg
+&lt;/code>&lt;/pre>&lt;p>The measurement is done using the &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/freq_sweep.py">&lt;code>freq_sweep.py&lt;/code> script&lt;/a>:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">matplotlib.pyplot&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">plt&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+&lt;span style="color:#60a0b0;font-style:italic"># frequency sweep&lt;/span>
+freq &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>geomspace(&lt;span style="color:#40a070">3&lt;/span>, &lt;span style="color:#40a070">20000&lt;/span>, num&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">200&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">with&lt;/span> &lt;span style="color:#007020">open&lt;/span>(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.csv&amp;#39;&lt;/span>), &lt;span style="color:#4070a0">&amp;#39;w&amp;#39;&lt;/span>) &lt;span style="color:#007020;font-weight:bold">as&lt;/span> csv:
+csv&lt;span style="color:#666">.&lt;/span>write(&lt;span style="color:#4070a0">&amp;#39;freq, rms_L, rms_R&lt;/span>&lt;span style="color:#4070a0;font-weight:bold">\n&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> f &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq:
+w_L, w_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave(f))
+rms_L, rms_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>rms(w_L), sc&lt;span style="color:#666">.&lt;/span>rms(w_R)
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;f = {f:.2f}, rms_L = {rms_L:.2f}, rms_R = {rms_R:.2f}&amp;#39;&lt;/span>)
+csv&lt;span style="color:#666">.&lt;/span>write(f&lt;span style="color:#4070a0">&amp;#39;{f:.2f}, {rms_L:.2f}, {rms_R:.2f}&lt;/span>&lt;span style="color:#4070a0;font-weight:bold">\n&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&lt;/span>)
+sweep &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>genfromtxt(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.csv&amp;#39;&lt;/span>), delimiter&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;,&amp;#39;&lt;/span>, names&lt;span style="color:#666">=&lt;/span>True)
+&lt;span style="color:#60a0b0;font-style:italic"># plot&lt;/span>
+plt&lt;span style="color:#666">.&lt;/span>figure(figsize&lt;span style="color:#666">=&lt;/span>(&lt;span style="color:#40a070">9&lt;/span>, &lt;span style="color:#40a070">2&lt;/span>))
+plt&lt;span style="color:#666">.&lt;/span>plot(sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>], sweep[&lt;span style="color:#4070a0">&amp;#39;rms_L&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;L ch&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot(sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>], sweep[&lt;span style="color:#4070a0">&amp;#39;rms_R&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;R ch&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>tight_layout()
+plt&lt;span style="color:#666">.&lt;/span>legend(loc&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;upper left&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>xscale(&lt;span style="color:#4070a0">&amp;#39;log&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>savefig(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.png&amp;#39;&lt;/span>), dpi&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">100&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The result of this measurement might look familiar &amp;ndash; it is a typical frequency response curve of audio systems:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/freq_sweep.png#center" alt="">&lt;/p>
+&lt;p>In my case, the response curve is approximately flat in the interval from 30Hz to 17,000Hz. Note that this range is hardware-dependent: higher-end audio chips produce &amp;ldquo;flatter&amp;rdquo; response, while my 10-years old motherboard is far from the ideal &amp;ldquo;20Hz to 20kHz&amp;rdquo; range. This curve also defines a usable range for frequency response measurements &amp;ndash; at frequencies below 30Hz or above 17,000Hz the sound card itself introduces measurement errors. This could be somewhat mitigated by introducing correction factors that account for sound card characteristics, but the benefits are not worth the additional steps in this case.&lt;/p>
+&lt;h4 id="capacitance-or-inductance-measurements">Capacitance or inductance measurements&lt;/h4>
+&lt;p>Now that the simple frequency response measurement is figured out, it could be extended to include the features required for capacitance or inductance measurements. Note that the example below uses a capacitive water level sensor with a fixed inductor, but the method can be adjusted for variable inductance sensors with fixed capacitors.&lt;/p>
+&lt;h4 id="circuit-design-1">Circuit design&lt;/h4>
+&lt;p>To read capacitance or inductance using frequency response curves, a measurement circuit must meet the following criteria:&lt;/p>
+&lt;ul>
+&lt;li>have an easily identifiable feature on its frequency characteristic&lt;/li>
+&lt;li>directly correlate this feature to the capacitance or inductance of its component&lt;/li>
+&lt;li>contain this feature within the usable frequency response range of the sound card&lt;/li>
+&lt;/ul>
+&lt;p>The simplest circuit made of entirely resistors and capacitors that exhibits such behavior is a &lt;a href="https://www.electronics-tutorials.ws/filter/filter_4.html">passive band-pass filter&lt;/a>:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/CR-RC-band-pass-filter.png#center" alt="">&lt;/p>
+&lt;p>When using identical resistors and capacitors on a low-pass and high-pass sides of the band-pass filter, the resulting frequency response peaks at its cut-off frequency:&lt;/p>
+&lt;pre>&lt;code>f = 1 / (2 * π * R * C)
+&lt;/code>&lt;/pre>&lt;p>However it has a disadvantage &amp;ndash; in order for peak to be &amp;ldquo;sharp&amp;rdquo; and easily identifiable, capacitors in the circuit must be identical. This complicates measurement of capacitive sensors, i.e. two identical sensors measuring the same parameter must be used with this circuit.&lt;/p>
+&lt;p>At a cost of somewhat increased complexity due to an additional inductor, RLC circuits exhibit similar behavior and utilize only one capacitor. There are &lt;a href="https://en.wikipedia.org/wiki/RLC_circuit">many topologies to choose from&lt;/a>. In this case, a series band-stop RLC filter is used:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/RLC-band-stop-series.png#center" alt="">&lt;/p>
+&lt;p>The response curve of this filter has a &amp;ldquo;dip&amp;rdquo; around its center frequency (see below). With a known inductance in the circuit, capacitance can be correlated to the frequency of the peak (and vice-versa for inductive measurements):&lt;/p>
+&lt;pre>&lt;code>f = 1 / (2 * π * sqrt(L * C))
+&lt;/code>&lt;/pre>&lt;p>Since the center frequency of RLC filters only depends on inductance and capacitance, knowledge of the reference gain is not required for frequency response measurements. This means that both audio channels can be used independently, allowing for simultaneous measurements of two capacitive or inductive sensors.&lt;/p>
+&lt;p>The inductor-capacitor combination must be chosen carefully to ensure that the center frequency of the band-stop filter can be accurately determined using the sound card. The usable frequency range of my sound card lies between 30Hz and 17,000Hz. In order to detect the peak on the frequency response characteristic, a few samples must be measured at frequencies below and above the peak. The corresponding center frequency of the band-stop filter should therefore be always higher than ~40Hz and lower than ~15,000Hz.&lt;/p>
+&lt;p>For capacitive measurements, constant inductances are used in the circuit. I salvaged my inductors from an old LED bulb, and they turned out to be 1.4mH and 3.3mH. Capacitance range that can be measured using 1.4mH inductor on my audio ADC is:&lt;/p>
+&lt;pre>&lt;code>C_min = 1 / (4 * π^2 * (15,000 Hz)^2 * 1.4e-3 H) = 80.414 nF
+C_max = 1 / (4 * π^2 * (40 Hz)^2 * 1.4e-3 H) = 11308 uF
+&lt;/code>&lt;/pre>&lt;p>Range for 3.3mH inductor:&lt;/p>
+&lt;pre>&lt;code>C_min = 1 / (4 * π^2 * (15,000 Hz)^2 * 3.3e-3 H) = 34.115 nF
+C_max = 1 / (4 * π^2 * (40 Hz)^2 * 3.3e-3 H) = 4797.4 uF
+&lt;/code>&lt;/pre>&lt;p>The capacitance of my DIY water level probe ranges from 0 to ~300nF. Since its lower bound is less than &lt;code>C_min&lt;/code>, an additional capacitor must be added to offset the center frequency down to detectable ~15,000Hz and ensure that peaks on frequency characteristics are always detectable. Capacitors are selected by rounding up the values of &lt;code>C_min&lt;/code>. In this case, a 100nF capacitor is added to a 1.4mH inductor and a 47nF capacitor is added to a 3.3 mH inductor. In this configuration, even the lowest capacitance of the sensor (i.e. at zero water level) produces frequency characteristics with a detectable peak:&lt;/p>
+&lt;pre>&lt;code>1 / (2 * π * sqrt(100e-9 F * 1.4e-3 H)) = 13451 Hz
+1 / (2 * π * sqrt(47e-9 F * 3.3e-3 H)) = 12778 Hz
+&lt;/code>&lt;/pre>&lt;p>For inductive sensors, similar calculations can be used for capacitor selection.&lt;/p>
+&lt;p>Finite input impedance of audio ADCs (in the order of 10kΩ) eliminates the need for an additional resistor. Audio output is used to excite the circuit at various frequencies and the response is recorded at the input side. To simplify the math, capacitive sensors are connected in parallel with fixed capacitors, so the total capacitance of RLC filters is the sum of the two. For inductance measurements, sensors would be connected in series with fixed inductors, when required.&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/RLC-band-stop-series-audio.png#center" alt="">&lt;/p>
+&lt;h4 id="hardware-setup-1">Hardware setup&lt;/h4>
+&lt;p>This simple stripboard allows quickly connecting the sensors and additional capacitors in parallel to the fixed capacitor via header pins and sockets:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/capacitor-breakout-board.png#center" alt="">&lt;/p>
+&lt;h4 id="software-setup-1">Software setup&lt;/h4>
+&lt;p>Center frequencies of RLC circuits on both channels are measured using &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/freq_sweep_peak.py">&lt;code>freq_sweep_peak.py&lt;/code> script&lt;/a>:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">matplotlib.pyplot&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">plt&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+peak, argpeak &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>min, np&lt;span style="color:#666">.&lt;/span>argmin &lt;span style="color:#60a0b0;font-style:italic"># replace with (np.max, np.argmax) for max values&lt;/span>
+&lt;span style="color:#60a0b0;font-style:italic"># frequency sweep&lt;/span>
+freq &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>geomspace(&lt;span style="color:#40a070">30&lt;/span>, &lt;span style="color:#40a070">17000&lt;/span>, num&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">100&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">with&lt;/span> &lt;span style="color:#007020">open&lt;/span>(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.csv&amp;#39;&lt;/span>), &lt;span style="color:#4070a0">&amp;#39;w&amp;#39;&lt;/span>) &lt;span style="color:#007020;font-weight:bold">as&lt;/span> csv:
+csv&lt;span style="color:#666">.&lt;/span>write(&lt;span style="color:#4070a0">&amp;#39;freq, rms_L, rms_R&lt;/span>&lt;span style="color:#4070a0;font-weight:bold">\n&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> f &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq:
+w_L, w_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave(f))
+rms_L, rms_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>rms(w_L), sc&lt;span style="color:#666">.&lt;/span>rms(w_R)
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;f = {f:.2f} Hz, rms_L = {rms_L:.2f}, rms_R = {rms_R:.2f}&amp;#39;&lt;/span>)
+csv&lt;span style="color:#666">.&lt;/span>write(f&lt;span style="color:#4070a0">&amp;#39;{f:.2f}, {rms_L:.2f}, {rms_R:.2f}&lt;/span>&lt;span style="color:#4070a0;font-weight:bold">\n&lt;/span>&lt;span style="color:#4070a0">&amp;#39;&lt;/span>)
+sweep &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>genfromtxt(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.csv&amp;#39;&lt;/span>), delimiter&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;,&amp;#39;&lt;/span>, names&lt;span style="color:#666">=&lt;/span>True)
+freq_L_peak, rms_L_peak &lt;span style="color:#666">=&lt;/span> sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>][argpeak(sweep[&lt;span style="color:#4070a0">&amp;#39;rms_L&amp;#39;&lt;/span>])], peak(sweep[&lt;span style="color:#4070a0">&amp;#39;rms_L&amp;#39;&lt;/span>])
+freq_R_peak, rms_R_peak &lt;span style="color:#666">=&lt;/span> sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>][argpeak(sweep[&lt;span style="color:#4070a0">&amp;#39;rms_R&amp;#39;&lt;/span>])], peak(sweep[&lt;span style="color:#4070a0">&amp;#39;rms_R&amp;#39;&lt;/span>])
+&lt;span style="color:#60a0b0;font-style:italic"># plot&lt;/span>
+plt&lt;span style="color:#666">.&lt;/span>figure(figsize&lt;span style="color:#666">=&lt;/span>(&lt;span style="color:#40a070">9&lt;/span>, &lt;span style="color:#40a070">2&lt;/span>))
+plt&lt;span style="color:#666">.&lt;/span>plot(sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>], sweep[&lt;span style="color:#4070a0">&amp;#39;rms_L&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>f&lt;span style="color:#4070a0">&amp;#39;L ch: peak @ {freq_L_peak:.2f} Hz&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot(sweep[&lt;span style="color:#4070a0">&amp;#39;freq&amp;#39;&lt;/span>], sweep[&lt;span style="color:#4070a0">&amp;#39;rms_R&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>f&lt;span style="color:#4070a0">&amp;#39;R ch: peak @ {freq_R_peak:.2f} Hz&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot([freq_L_peak, freq_R_peak], [rms_L_peak, rms_R_peak], &lt;span style="color:#4070a0">&amp;#39;+&amp;#39;&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">7&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>tight_layout()
+plt&lt;span style="color:#666">.&lt;/span>legend(loc&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;lower left&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>xscale(&lt;span style="color:#4070a0">&amp;#39;log&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>savefig(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.png&amp;#39;&lt;/span>), dpi&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">100&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The center frequencies are detected at close to the expected values (&lt;code>12778Hz&lt;/code> and &lt;code>13451Hz&lt;/code>):&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/freq_sweep_peak.png#center" alt="">&lt;/p>
+&lt;p>For the following plot, various capacitors are used to mock the sensor. Frequency response is measured for each capacitor on the left channel:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/multiple_sweep_left.png#center" alt="">&lt;/p>
+&lt;p>And on the right channel:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/multiple_sweep_right.png#center" alt="">&lt;/p>
+&lt;p>Note the differences between the channels:&lt;/p>
+&lt;ul>
+&lt;li>peaks are &amp;ldquo;sharper&amp;rdquo; and distributed further apart on the left channel, which improves the accuracy and resolution of detected peak frequencies&lt;/li>
+&lt;li>frequency range occupied by the peaks is narrower on the right channel, which increases the range of capacitances that could be measured with a given sound card&lt;/li>
+&lt;/ul>
+&lt;p>This demonstrates that selection of inductors is a trade-off between measurement range and accuracy. The inductor affects both the absolute value of the center frequency (&lt;code>f&lt;/code>) and the bandwidth of the filter (&lt;code>Δf&lt;/code>):&lt;/p>
+&lt;pre>&lt;code>f = 1 / (2 * π * sqrt(L * C))
+Δf = R / (2 * π * L)
+&lt;/code>&lt;/pre>&lt;p>Given a constant resistance &lt;code>R&lt;/code> and capacitance &lt;code>C&lt;/code>, higher inductance &lt;code>L&lt;/code> will reduce the bandwidth of the filter (i.e. make the peaks &amp;ldquo;sharper&amp;rdquo;) at a cost of reduced sensitivity of the filter to changing capacitance &lt;code>C&lt;/code>.&lt;/p>
+&lt;p>While reliably detecting the center frequency of the band-pass filter, the high-resolution frequency sweep requires a large number of measurements, and therefore takes a long time to complete. To reduce the measurement time, &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/freq_iter_peak.py">&lt;code>freq_iter_peak.py&lt;/code> script&lt;/a> can be used. It employs a simple iterative optimization to find the peaks faster:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">matplotlib.pyplot&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">plt&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+STEPS &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">4&lt;/span>
+ITERS &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">4&lt;/span>
+peak, argpeak &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>min, np&lt;span style="color:#666">.&lt;/span>argmin &lt;span style="color:#60a0b0;font-style:italic"># replace with (np.max, np.argmax) for max values&lt;/span>
+&lt;span style="color:#60a0b0;font-style:italic"># optimization&lt;/span>
+freq &lt;span style="color:#666">=&lt;/span> {&lt;span style="color:#4070a0">&amp;#39;L&amp;#39;&lt;/span>: np&lt;span style="color:#666">.&lt;/span>geomspace(&lt;span style="color:#40a070">30&lt;/span>, &lt;span style="color:#40a070">17000&lt;/span>, num&lt;span style="color:#666">=&lt;/span>STEPS)&lt;span style="color:#666">.&lt;/span>tolist(), &lt;span style="color:#4070a0">&amp;#39;R&amp;#39;&lt;/span>: np&lt;span style="color:#666">.&lt;/span>geomspace(&lt;span style="color:#40a070">30&lt;/span>, &lt;span style="color:#40a070">17000&lt;/span>, num&lt;span style="color:#666">=&lt;/span>STEPS)&lt;span style="color:#666">.&lt;/span>tolist()}
+rms &lt;span style="color:#666">=&lt;/span> {&lt;span style="color:#4070a0">&amp;#39;L&amp;#39;&lt;/span>: [], &lt;span style="color:#4070a0">&amp;#39;R&amp;#39;&lt;/span>: []}
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> n, ch &lt;span style="color:#007020;font-weight:bold">in&lt;/span> [(&lt;span style="color:#40a070">0&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;L&amp;#39;&lt;/span>), (&lt;span style="color:#40a070">1&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;R&amp;#39;&lt;/span>)]:
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;Optimizing channel {ch}&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> f &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq[ch]:
+w &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave(f))
+rms[ch]&lt;span style="color:#666">.&lt;/span>append(sc&lt;span style="color:#666">.&lt;/span>rms(w[n]))
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;f = {f:.2f} Hz, rms_{ch} = {rms[ch][-1]:.2f}&amp;#39;&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> i &lt;span style="color:#007020;font-weight:bold">in&lt;/span> &lt;span style="color:#007020">range&lt;/span>(ITERS):
+peak_indices &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>argwhere(rms[ch] &lt;span style="color:#666">==&lt;/span> peak(rms[ch]))&lt;span style="color:#666">.&lt;/span>flatten()
+peak_index_left, peak_index_right &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#007020">max&lt;/span>(&lt;span style="color:#40a070">0&lt;/span>, &lt;span style="color:#007020">min&lt;/span>(peak_indices) &lt;span style="color:#666">-&lt;/span> &lt;span style="color:#40a070">1&lt;/span>), &lt;span style="color:#007020">min&lt;/span>(&lt;span style="color:#007020">max&lt;/span>(peak_indices) &lt;span style="color:#666">+&lt;/span> &lt;span style="color:#40a070">1&lt;/span>, &lt;span style="color:#007020">len&lt;/span>(freq[ch]) &lt;span style="color:#666">-&lt;/span> &lt;span style="color:#40a070">1&lt;/span>)
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;{&amp;#34; &amp;#34;*4*i}refining peak: f_{ch} = {freq[ch][peak_indices[0]]:.2f} Hz, peak_{ch} = {peak(rms[ch]):.2f}&amp;#39;&lt;/span>)
+freq_fine &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>geomspace(freq[ch][peak_index_left], freq[ch][peak_index_right], num&lt;span style="color:#666">=&lt;/span>STEPS &lt;span style="color:#666">+&lt;/span> &lt;span style="color:#40a070">2&lt;/span>)
+freq_fine &lt;span style="color:#666">=&lt;/span> [k &lt;span style="color:#007020;font-weight:bold">for&lt;/span> k &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq_fine[&lt;span style="color:#40a070">1&lt;/span>:&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>] &lt;span style="color:#007020;font-weight:bold">if&lt;/span> k &lt;span style="color:#007020;font-weight:bold">not&lt;/span> &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq[ch]] &lt;span style="color:#60a0b0;font-style:italic"># don&amp;#39;t duplicate measurements&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> f &lt;span style="color:#007020;font-weight:bold">in&lt;/span> freq_fine:
+freq_pos &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>argwhere(f &lt;span style="color:#666">&amp;lt;&lt;/span> np&lt;span style="color:#666">.&lt;/span>array(freq[ch]))&lt;span style="color:#666">.&lt;/span>flatten()[&lt;span style="color:#40a070">0&lt;/span>]
+w &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>sine_wave(f))
+rms[ch]&lt;span style="color:#666">.&lt;/span>insert(freq_pos, sc&lt;span style="color:#666">.&lt;/span>rms(w[n]))
+freq[ch]&lt;span style="color:#666">.&lt;/span>insert(freq_pos, f)
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;{&amp;#34; &amp;#34;*4*(i+1)}f = {f:.2f} Hz, rms_{ch} = {rms[ch][freq_pos]:.2f}&amp;#39;&lt;/span>)
+peak_indices &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>argwhere(rms[ch] &lt;span style="color:#666">==&lt;/span> peak(rms[ch]))&lt;span style="color:#666">.&lt;/span>flatten()
+peak_freq &lt;span style="color:#666">=&lt;/span> freq[ch][peak_indices[&lt;span style="color:#007020">len&lt;/span>(peak_indices) &lt;span style="color:#666">//&lt;/span> &lt;span style="color:#40a070">2&lt;/span>]]
+&lt;span style="color:#007020;font-weight:bold">print&lt;/span>(f&lt;span style="color:#4070a0">&amp;#39;{&amp;#34; &amp;#34;*ITERS}final peak: f_{ch} = {peak_freq:.2f} Hz, rms_{ch} = {peak(rms[ch]):.2f}&amp;#39;&lt;/span>)
+freq[f&lt;span style="color:#4070a0">&amp;#39;{ch}_peak&amp;#39;&lt;/span>], rms[f&lt;span style="color:#4070a0">&amp;#39;{ch}_peak&amp;#39;&lt;/span>] &lt;span style="color:#666">=&lt;/span> freq[ch][argpeak(rms[ch])], peak(rms[ch])
+&lt;span style="color:#60a0b0;font-style:italic"># plot&lt;/span>
+plt&lt;span style="color:#666">.&lt;/span>figure(figsize&lt;span style="color:#666">=&lt;/span>(&lt;span style="color:#40a070">9&lt;/span>, &lt;span style="color:#40a070">2&lt;/span>))
+&lt;span style="color:#007020;font-weight:bold">for&lt;/span> ch &lt;span style="color:#007020;font-weight:bold">in&lt;/span> [&lt;span style="color:#4070a0">&amp;#39;L&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;R&amp;#39;&lt;/span>]:
+plt&lt;span style="color:#666">.&lt;/span>plot(freq[ch], rms[ch], &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>f&lt;span style="color:#4070a0">&amp;#39;{ch} ch: peak @ {freq[f&amp;#34;{ch}_peak&amp;#34;]:.2f} Hz&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">3&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot(freq[f&lt;span style="color:#4070a0">&amp;#39;{ch}_peak&amp;#39;&lt;/span>], rms[f&lt;span style="color:#4070a0">&amp;#39;{ch}_peak&amp;#39;&lt;/span>], &lt;span style="color:#4070a0">&amp;#39;+&amp;#39;&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">7&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>tight_layout()
+plt&lt;span style="color:#666">.&lt;/span>legend(loc&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;lower left&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>xscale(&lt;span style="color:#4070a0">&amp;#39;log&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>savefig(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.png&amp;#39;&lt;/span>), dpi&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">100&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>&lt;em>Off-topic note: reducing the number of measurements required to find the center frequencies of RLC-circuits is a typical example of mathematical optimization. The iterative approach described above utilizes the simplest &lt;a href="https://en.wikipedia.org/wiki/Greedy_algorithm">Greedy algorithm&lt;/a> to find the local minimum of the frequency characteristic. More complicated optimization algorithms (e.g. &lt;a href="https://en.wikipedia.org/wiki/Gradient_descent">Gradient descent&lt;/a>) can be employed to reduce the measurement time even further.&lt;/em>&lt;/p>
+&lt;p>This graph demonstrates why it is both faster and more accurate. Since measurements are only taken around &amp;ldquo;important&amp;rdquo; regions of interest, every consecutive measurement further improves the accuracy:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/freq_iter_peak.png#center" alt="">&lt;/p>
+&lt;p>Can we do any faster? Yes! The &lt;a href="https://github.com/nagimov/sound-card-daq/blob/main/freq_fft_peak.py">&lt;code>freq_fft_peak.py&lt;/code> script&lt;/a> can be used to excite the circuit with &lt;a href="https://en.wikipedia.org/wiki/White_noise">white noise&lt;/a> and measure the frequency response at the output in a single measurement using a &lt;a href="https://en.wikipedia.org/wiki/Fast_Fourier_transform">Fast Fourier Transform&lt;/a>. While the theory behind this method is heavy on math, the implementation is very simple thanks to the python libraries:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">matplotlib.pyplot&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">plt&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">soundcard&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">sc&lt;/span>
+peak, argpeak &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>min, np&lt;span style="color:#666">.&lt;/span>argmin &lt;span style="color:#60a0b0;font-style:italic"># replace with (np.max, np.argmax) for max values&lt;/span>
+&lt;span style="color:#60a0b0;font-style:italic"># fft peak&lt;/span>
+freq_bins &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>geomspace(&lt;span style="color:#40a070">30&lt;/span>, &lt;span style="color:#40a070">17000&lt;/span>, &lt;span style="color:#40a070">300&lt;/span>)
+freq_bins_cent &lt;span style="color:#666">=&lt;/span> [np&lt;span style="color:#666">.&lt;/span>mean([lo, hi]) &lt;span style="color:#007020;font-weight:bold">for&lt;/span> lo, hi &lt;span style="color:#007020;font-weight:bold">in&lt;/span> &lt;span style="color:#007020">zip&lt;/span>(freq_bins[:&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>], freq_bins[&lt;span style="color:#40a070">1&lt;/span>:])]
+w_L, w_R &lt;span style="color:#666">=&lt;/span> sc&lt;span style="color:#666">.&lt;/span>play_and_record(sc&lt;span style="color:#666">.&lt;/span>white_noise())
+freq &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>fft&lt;span style="color:#666">.&lt;/span>rfftfreq(&lt;span style="color:#007020">len&lt;/span>(w_L), &lt;span style="color:#40a070">1&lt;/span> &lt;span style="color:#666">/&lt;/span> sc&lt;span style="color:#666">.&lt;/span>SAMPLE_RATE)
+fft_L, fft_R &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>abs(np&lt;span style="color:#666">.&lt;/span>fft&lt;span style="color:#666">.&lt;/span>rfft(w_L)), np&lt;span style="color:#666">.&lt;/span>abs(np&lt;span style="color:#666">.&lt;/span>fft&lt;span style="color:#666">.&lt;/span>rfft(w_R))
+fft_L_bins &lt;span style="color:#666">=&lt;/span> [np&lt;span style="color:#666">.&lt;/span>mean(fft_L[np&lt;span style="color:#666">.&lt;/span>where((freq &lt;span style="color:#666">&amp;gt;&lt;/span> lo) &lt;span style="color:#666">&amp;amp;&lt;/span> (freq &lt;span style="color:#666">&amp;lt;=&lt;/span> hi))]) &lt;span style="color:#007020;font-weight:bold">for&lt;/span> lo, hi &lt;span style="color:#007020;font-weight:bold">in&lt;/span> &lt;span style="color:#007020">zip&lt;/span>(freq_bins[:&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>], freq_bins[&lt;span style="color:#40a070">1&lt;/span>:])]
+fft_R_bins &lt;span style="color:#666">=&lt;/span> [np&lt;span style="color:#666">.&lt;/span>mean(fft_R[np&lt;span style="color:#666">.&lt;/span>where((freq &lt;span style="color:#666">&amp;gt;&lt;/span> lo) &lt;span style="color:#666">&amp;amp;&lt;/span> (freq &lt;span style="color:#666">&amp;lt;=&lt;/span> hi))]) &lt;span style="color:#007020;font-weight:bold">for&lt;/span> lo, hi &lt;span style="color:#007020;font-weight:bold">in&lt;/span> &lt;span style="color:#007020">zip&lt;/span>(freq_bins[:&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>], freq_bins[&lt;span style="color:#40a070">1&lt;/span>:])]
+freq_L_peak, fft_L_peak &lt;span style="color:#666">=&lt;/span> freq_bins_cent[argpeak(fft_L_bins)], peak(fft_L_bins)
+freq_R_peak, fft_R_peak &lt;span style="color:#666">=&lt;/span> freq_bins_cent[argpeak(fft_R_bins)], peak(fft_R_bins)
+&lt;span style="color:#60a0b0;font-style:italic"># plot&lt;/span>
+scale &lt;span style="color:#666">=&lt;/span> &lt;span style="color:#40a070">0.01&lt;/span>
+plt&lt;span style="color:#666">.&lt;/span>figure(figsize&lt;span style="color:#666">=&lt;/span>(&lt;span style="color:#40a070">9&lt;/span>, &lt;span style="color:#40a070">2&lt;/span>))
+plt&lt;span style="color:#666">.&lt;/span>plot(freq_bins_cent, np&lt;span style="color:#666">.&lt;/span>array(fft_L_bins)&lt;span style="color:#666">*&lt;/span>scale, &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>f&lt;span style="color:#4070a0">&amp;#39;L ch: peak @ {freq_L_peak:.2f} Hz&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot(freq_bins_cent, np&lt;span style="color:#666">.&lt;/span>array(fft_R_bins)&lt;span style="color:#666">*&lt;/span>scale, &lt;span style="color:#4070a0">&amp;#39;.-&amp;#39;&lt;/span>, label&lt;span style="color:#666">=&lt;/span>f&lt;span style="color:#4070a0">&amp;#39;R ch: peak @ {freq_R_peak:.2f} Hz&amp;#39;&lt;/span>, lw&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">0.5&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">1&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>plot([freq_L_peak, freq_R_peak], [fft_L_peak&lt;span style="color:#666">*&lt;/span>scale, fft_R_peak&lt;span style="color:#666">*&lt;/span>scale], &lt;span style="color:#4070a0">&amp;#39;+&amp;#39;&lt;/span>, ms&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">7&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>tight_layout()
+plt&lt;span style="color:#666">.&lt;/span>legend(loc&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#4070a0">&amp;#39;lower left&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>xscale(&lt;span style="color:#4070a0">&amp;#39;log&amp;#39;&lt;/span>)
+plt&lt;span style="color:#666">.&lt;/span>savefig(__file__&lt;span style="color:#666">.&lt;/span>replace(&lt;span style="color:#4070a0">&amp;#39;.py&amp;#39;&lt;/span>, &lt;span style="color:#4070a0">&amp;#39;.png&amp;#39;&lt;/span>), dpi&lt;span style="color:#666">=&lt;/span>&lt;span style="color:#40a070">100&lt;/span>)
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>As a result, the entire frequency range is analyzed in a single measurement. Note that the peaks are consistent with values from the iterative optimization plot:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/freq_fft_peak.png#center" alt="">&lt;/p>
+&lt;p>The last step is to back-calculate the capacitance from the frequency response. The above two charts are taken using a 470nF capacitor on the left channel and a 47nF capacitor on the right channel. Measurements are within ±10% of expected values:&lt;/p>
+&lt;pre>&lt;code>C_L = 1 / (4 * π^2 * (3,800 Hz)^2 * 3.3e-3 H) - 47e-9 F = 484 nF
+C_R = 1 / (4 * π^2 * (11,200 Hz)^2 * 1.4e-3 H) - 100e-9 F = 44.2 nF
+&lt;/code>&lt;/pre>&lt;h4 id="water-level-measurement">Water level measurement&lt;/h4>
+&lt;p>A useful example of a capacitive sensor is a liquid level probe. The sensor can be easily made from two pieces of aluminum foil, affixed close to each other without touching anywhere. I used two 3d-printed plastic frames to hold two strips of foil using super-glue, and attached a piece of jumper wire onto each strip:&lt;/p>
+&lt;p>&lt;center>
+&lt;img src="https://nagimov.me/images/sound-card-daq/frames.jpg"> &lt;img src="https://nagimov.me/images/sound-card-daq/level_probe.jpg">
+&lt;/center>&lt;/p>
+&lt;p>When the water level goes up it fills a portion of the gap between the wires. Since the relative permittivity of water is ~80 times higher than that of air, the total capacitance of the sensor increases. This change in capacitance can be detected and translated to a liquid level:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/sound-card-daq/liquid_level.gif#center" alt="">&lt;/p>
+&lt;h3 id="troubleshooting">Troubleshooting&lt;/h3>
+&lt;ul>
+&lt;li>Depending on the setup (PC configuration, current CPU load, etc.), OS &amp;ldquo;reaction time&amp;rdquo; can vary. Sometimes it takes a second or two for PulseAudio to play the wave file, there is another delay for the recording process to &amp;ldquo;catch up&amp;rdquo;, etc. To achieve consistent measurements, delays are introduced into the playing and recording sequence. If used on an outdated hardware, timing variables (&lt;code>DURATION_RECORD&lt;/code>, &lt;code>PAUSE_PRE_PLAY&lt;/code>, &lt;code>PAUSE_PRE_RECORD&lt;/code>, &lt;code>PAUSE_POST_RECORD&lt;/code>, and &lt;code>DURATION_PLAY&lt;/code>) might need to be increased in the &lt;code>soundcard.py&lt;/code> module. Alternatively, when used on a fast modern PC, these variables can be decreased to speed up the measurements.&lt;/li>
+&lt;li>Whenever PulseAudio errors are displayed (e.g. &lt;code>Stream error: No such entity&lt;/code> or &lt;code>No sink/source found by this name or index&lt;/code>), make sure that correct PulseAudio source and sink are specified in the &lt;code>soundcard.cfg&lt;/code> file.&lt;/li>
+&lt;/ul></description></item><item><title>Simple Differential and Incremental Backups Using 7-zip</title><link>https://nagimov.me/post/simple-differential-and-incremental-backups-using-7-zip/</link><pubDate>Sun, 05 Apr 2020 21:30:50 -0700</pubDate><guid>https://nagimov.me/post/simple-differential-and-incremental-backups-using-7-zip/</guid><description>&lt;p>Quick, cheap and easy (cheap as in &amp;ldquo;free&amp;rdquo;, &amp;ldquo;free&amp;rdquo; as in &amp;ldquo;freedom&amp;rdquo;) alternative to both heavy backup solutions and lightweight git-repo based backups with much less overhead and better compression: &lt;a href="https://www.7-zip.org">7-zip&lt;/a>.&lt;/p>
+&lt;p>7-zip&amp;rsquo;s &lt;code>-u&lt;/code> switch provides fine-grained control over creating and updating archives based on states of already-archived and to-be-archived files. The switch is specified as a combination of state-action flags (&lt;a href="https://sevenzip.osdn.jp/chm/cmdline/switches/update.htm">more info&lt;/a>):&lt;/p>
+&lt;table class="table table-dark table-striped table-bordered">
+&lt;thead>
+&lt;tr>
+&lt;th align="center">State&lt;/th>
+&lt;th align="left">State condition&lt;/th>
+&lt;th align="center">File on Disk&lt;/th>
+&lt;th align="center">File in Archive&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td align="center">p&lt;/td>
+&lt;td align="left">File exists in archive, but is not matched with wildcard&lt;/td>
+&lt;td align="center">?&lt;/td>
+&lt;td align="center">Exists, but is not matched&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">q&lt;/td>
+&lt;td align="left">File exists in archive, but doesn&amp;rsquo;t exist on disk&lt;/td>
+&lt;td align="center">Doesn&amp;rsquo;t exist&lt;/td>
+&lt;td align="center">Exists&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">r&lt;/td>
+&lt;td align="left">File doesn&amp;rsquo;t exist in archive, but exists on disk&lt;/td>
+&lt;td align="center">Exists&lt;/td>
+&lt;td align="center">Doesn&amp;rsquo;t exist&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">x&lt;/td>
+&lt;td align="left">File in archive is newer than the file on disk&lt;/td>
+&lt;td align="center">Older&lt;/td>
+&lt;td align="center">Newer&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">y&lt;/td>
+&lt;td align="left">File in archive is older than the file on disk&lt;/td>
+&lt;td align="center">Newer&lt;/td>
+&lt;td align="center">Older&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">z&lt;/td>
+&lt;td align="left">File in archive is same as the file on disk&lt;/td>
+&lt;td align="center">Same&lt;/td>
+&lt;td align="center">Same&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">w&lt;/td>
+&lt;td align="left">Can not be detected what file is newer (times are the same, sizes are different)&lt;/td>
+&lt;td align="center">?&lt;/td>
+&lt;td align="center">?&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;table class="table table-dark table-striped table-bordered">
+&lt;thead>
+&lt;tr>
+&lt;th align="center">Action&lt;/th>
+&lt;th align="left">Description&lt;/th>
+&lt;/tr>
+&lt;/thead>
+&lt;tbody>
+&lt;tr>
+&lt;td align="center">0&lt;/td>
+&lt;td align="left">Ignore file (don&amp;rsquo;t create item in new archive for this file)&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">1&lt;/td>
+&lt;td align="left">Copy file (copy from old archive to new)&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">2&lt;/td>
+&lt;td align="left">Compress (compress file from disk to new archive)&lt;/td>
+&lt;/tr>
+&lt;tr>
+&lt;td align="center">3&lt;/td>
+&lt;td align="left">Create Anti-item (item that will delete file or directory during extracting)&lt;/td>
+&lt;/tr>
+&lt;/tbody>
+&lt;/table>
+&lt;p>Full combination of the above states-actions covers every possible backup scenario without any extra file comparison logic.&lt;/p>
+&lt;p>Examples:&lt;/p>
+&lt;ul>
+&lt;li>update existing full backup of &lt;code>$HOME/*&lt;/code> directory:
+&lt;ul>
+&lt;li>&lt;code>7z u full_backup.7z $HOME/* -up0q0r2x2y2z1w2&lt;/code>
+&lt;ul>
+&lt;li>&lt;code>p0&lt;/code> - ignore files not matched by wildcard (irrelevant in case of &lt;code>$HOME/*&lt;/code> wildcard)&lt;/li>
+&lt;li>&lt;code>q0&lt;/code> - ignore removed files&lt;/li>
+&lt;li>&lt;code>r2&lt;/code> - if new file was created, compress it&lt;/li>
+&lt;li>&lt;code>x2&lt;/code>, &lt;code>y2&lt;/code> - if file is newer or older, compress it&lt;/li>
+&lt;li>&lt;code>z1&lt;/code> - if file is the same, copy it without compression (this flag significantly reduces compression time)&lt;/li>
+&lt;li>&lt;code>w2&lt;/code> - if in doubt, compress the file&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;li>create a differential backup of all the files changed since the last full backup was created:
+&lt;ul>
+&lt;li>&lt;code>7z u full_backup.7z -u- -&amp;quot;up0q3r2x2y2z0w2!{differential_backup.7z}&amp;quot; $HOME/*&lt;/code>
+&lt;ul>
+&lt;li>&lt;code>-u-&lt;/code> - &amp;ldquo;dash&amp;rdquo; parameter disables updates in the base archive &lt;code>full_backup.7z&lt;/code>&lt;/li>
+&lt;li>&lt;code>q0&lt;/code> - if file was removed, &amp;ldquo;remember&amp;rdquo; the removal by creating an &amp;ldquo;anti-item&amp;rdquo;&lt;/li>
+&lt;li>&lt;code>z0&lt;/code> - if file is the same, skip it since backup is differential&lt;/li>
+&lt;li>the rest of the flags are the same&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;p>Incremental backups can be achieved by creating &amp;ldquo;decremental&amp;rdquo; backups along the way with a rolling up-to-date full backup (order matters!) in two steps:&lt;/p>
+&lt;ul>
+&lt;li>create a &amp;ldquo;decremental backup&amp;rdquo; between the existing state and the previous full backup, a.k.a. &amp;ldquo;incremental backup&amp;rdquo; between previous and current states:
+&lt;ul>
+&lt;li>&lt;code>7z u full_backup.7z $HOME/* -u- -up1q1r3x1y1z0w1!{incremental_backup.7z}&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;li>update a full backup to keep track of the existing state:
+&lt;ul>
+&lt;li>&lt;code>7z u full_backup.7z $HOME/* -up0q0r2x2y2z1w2&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;/li>
+&lt;/ul>
+&lt;p>Using this approach, files can be rolled back to the state of any incremental backup by simply extracting all the backups in reverse chronological order, e.g. files can be rolled back to &amp;ldquo;three backups back&amp;rdquo; in four steps:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>7z x -y full_backup.7z -o$HOME&lt;/code>&lt;/li>
+&lt;li>&lt;code>7z x -y incremental_backup_2020_04_05.7z -o$HOME&lt;/code>&lt;/li>
+&lt;li>&lt;code>7z x -y incremental_backup_2020_04_04.7z -o$HOME&lt;/code>&lt;/li>
+&lt;li>&lt;code>7z x -y incremental_backup_2020_04_03.7z -o$HOME&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Thanks to 7-zip&amp;rsquo;s open file format, you can easily peek inside of any incremental/differential backup. Combined with a strong encryption and incredible compression, this makes 7-zip my go-to choice for all of my backups.&lt;/p>
+&lt;p>AFAIK the only way to support development of 7-zip is to use developer&amp;rsquo;s referral link to digital ocean, so please do so if you can :) &lt;a href="https://m.do.co/c/cab893b82fa8">https://m.do.co/c/cab893b82fa8&lt;/a>&lt;/p>
+&lt;h3 id="testing">Testing&lt;/h3>
+&lt;p>Here&amp;rsquo;s a little MWE to test incremental backups.&lt;/p>
+&lt;p>Prepare a test folder (&lt;code>echo&lt;/code> is used instead of &lt;code>touch&lt;/code> so the size of files can be changed and tracked):&lt;/p>
+&lt;pre>&lt;code>cd /tmp
+mkdir test
+echo 'test' &amp;gt;test/1
+echo 'test' &amp;gt;test/2
+mkdir test/3
+echo 'test' &amp;gt;test/3/4
+ls -ld $(find test)
+&lt;/code>&lt;/pre>&lt;p>Get the expected list of 5 byte long files:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 3 nagimov nagimov 4096 Apr 5 21:15 test
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/1
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/3/4
+&lt;/code>&lt;/pre>&lt;p>Create initial full backup and list its files:&lt;/p>
+&lt;pre>&lt;code>7z a test.7z test/*
+7z l test.7z
+&lt;/code>&lt;/pre>&lt;p>Note the timestamps and file sizes:&lt;/p>
+&lt;pre>&lt;code> Date Time Attr Size Compressed Name
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 D.... 0 0 test/3
+2020-04-05 21:15:06 ....A 5 19 test/1
+2020-04-05 21:15:06 ....A 5 test/2
+2020-04-05 21:15:06 ....A 5 test/3/4
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 15 19 3 files, 1 folders
+&lt;/code>&lt;/pre>&lt;p>Increase the size of file &lt;code>2&lt;/code> and create new folder &lt;code>5&lt;/code> with file &lt;code>6&lt;/code>:&lt;/p>
+&lt;pre>&lt;code>echo 'testtest' &amp;gt;test/2
+mkdir test/5
+echo 'testtest' &amp;gt;test/5/6
+ls -ld $(find test)
+&lt;/code>&lt;/pre>&lt;p>Get an expected output - file &lt;code>2&lt;/code> is larger, new file &lt;code>5/6&lt;/code> is appeared:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 4 nagimov nagimov 4096 Apr 5 21:15 test
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/1
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 test/5
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 test/5/6
+&lt;/code>&lt;/pre>&lt;p>Create an incremental backup:&lt;/p>
+&lt;pre>&lt;code>7z u test.7z -u- -up1q1r3x1y1z0w1'!'test_inc1.7z test/*
+7z l test_inc1.7z
+&lt;/code>&lt;/pre>&lt;p>Expectedly, there are only pre-modified versions of modified files in the incremental backup - file &lt;code>2&lt;/code> is still tiny and file &lt;code>5/6&lt;/code> is an &amp;ldquo;anti-item&amp;rdquo; of newly created file (note that its size is 0):&lt;/p>
+&lt;pre>&lt;code> Date Time Attr Size Compressed Name
+------------------- ----- ------------ ------------ ------------------------
+..... 0 0 test/5/6
+D.... 0 0 test/5
+2020-04-05 21:15:06 ....A 5 9 test/2
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 5 9 2 files, 1 folders
+&lt;/code>&lt;/pre>&lt;p>Update full backup:&lt;/p>
+&lt;pre>&lt;code>7z u test.7z test/* -up0q0r2x2y2z1w2
+7z l test.7z
+&lt;/code>&lt;/pre>&lt;p>It now contains current versions of all the files - larger &lt;code>2&lt;/code> and &lt;code>5/6&lt;/code>:&lt;/p>
+&lt;pre>&lt;code> Date Time Attr Size Compressed Name
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 D.... 0 0 test/3
+2020-04-05 21:15:31 D.... 0 0 test/5
+2020-04-05 21:15:06 ....A 5 14 test/1
+2020-04-05 21:15:06 ....A 5 test/3/4
+2020-04-05 21:15:31 ....A 9 20 test/2
+2020-04-05 21:15:31 ....A 9 test/5/6
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:31 28 34 4 files, 2 folders
+&lt;/code>&lt;/pre>&lt;p>Make &lt;code>2&lt;/code> even larger and remove &lt;code>1&lt;/code>:&lt;/p>
+&lt;pre>&lt;code>echo 'testtesttest' &amp;gt;test/2
+rm test/1
+ls -ld $(find test)
+&lt;/code>&lt;/pre>&lt;p>Now &lt;code>2&lt;/code> is the largest and &lt;code>1&lt;/code> isn&amp;rsquo;t present anymore:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 4 nagimov nagimov 4096 Apr 5 21:16 test
+-rw-r--r-- 1 nagimov nagimov 13 Apr 5 21:16 test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 test/5
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 test/5/6
+&lt;/code>&lt;/pre>&lt;p>Another step of incremental backup:&lt;/p>
+&lt;pre>&lt;code>7z u test.7z -u- -up1q1r3x1y1z0w1'!'test_inc2.7z test/*
+7z l test_inc2.7z
+&lt;/code>&lt;/pre>&lt;p>Pre-modified versions of &lt;code>1&lt;/code> and &lt;code>2&lt;/code> are archived - &lt;code>1&lt;/code> in its original size and &lt;code>2&lt;/code> in its intermediate size:&lt;/p>
+&lt;pre>&lt;code> Date Time Attr Size Compressed Name
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 ....A 5 9 test/1
+2020-04-05 21:15:31 ....A 9 13 test/2
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:31 14 22 2 files
+&lt;/code>&lt;/pre>&lt;p>Another update of the full backup:&lt;/p>
+&lt;pre>&lt;code>7z u test.7z test/* -up0q0r2x2y2z1w2
+7z l test.7z
+&lt;/code>&lt;/pre>&lt;p>Full archive is now up to date:&lt;/p>
+&lt;pre>&lt;code> Date Time Attr Size Compressed Name
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:15:06 D.... 0 0 test/3
+2020-04-05 21:15:31 D.... 0 0 test/5
+2020-04-05 21:15:06 ....A 5 9 test/3/4
+2020-04-05 21:15:31 ....A 9 13 test/5/6
+2020-04-05 21:16:00 ....A 13 17 test/2
+------------------- ----- ------------ ------------ ------------------------
+2020-04-05 21:16:00 27 39 3 files, 2 folders
+&lt;/code>&lt;/pre>&lt;p>Now it&amp;rsquo;s time to roll back through every state of the &lt;code>test&lt;/code> folder:&lt;/p>
+&lt;pre>&lt;code>mkdir unzip
+7z x -y test.7z -ounzip
+ls -ld $(find unzip)
+&lt;/code>&lt;/pre>&lt;p>Latest state with absent &lt;code>1&lt;/code>, beefy 13 bytes long &lt;code>2&lt;/code> and present &lt;code>6&lt;/code>:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 3 nagimov nagimov 4096 Apr 5 21:16 unzip
+drwx------ 4 nagimov nagimov 4096 Apr 5 21:16 unzip/test
+-rw-r--r-- 1 nagimov nagimov 13 Apr 5 21:16 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 unzip/test/5
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 unzip/test/5/6
+&lt;/code>&lt;/pre>&lt;p>Going back to state inc2:&lt;/p>
+&lt;pre>&lt;code>7z x -y test_inc2.7z -ounzip
+ls -ld $(find unzip)
+&lt;/code>&lt;/pre>&lt;p>Getting &lt;code>1&lt;/code> undeleted and &lt;code>2&lt;/code> thinned down to 9 bytes:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 3 nagimov nagimov 4096 Apr 5 21:16 unzip
+drwx------ 4 nagimov nagimov 4096 Apr 5 21:16 unzip/test
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/1
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/3/4
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 unzip/test/5
+-rw-r--r-- 1 nagimov nagimov 9 Apr 5 21:15 unzip/test/5/6
+&lt;/code>&lt;/pre>&lt;p>Going back to initial state:&lt;/p>
+&lt;pre>&lt;code>7z x -y test_inc1.7z -ounzip
+ls -ld $(find unzip)
+&lt;/code>&lt;/pre>&lt;p>Getting &lt;code>5/6&lt;/code> uncreated and &lt;code>2&lt;/code> reduced to 5 bytes:&lt;/p>
+&lt;pre>&lt;code>drwxr-xr-x 3 nagimov nagimov 4096 Apr 5 21:16 unzip
+drwx------ 3 nagimov nagimov 4096 Apr 5 21:17 unzip/test
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/1
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/2
+drwxr-xr-x 2 nagimov nagimov 4096 Apr 5 21:15 unzip/test/3
+-rw-r--r-- 1 nagimov nagimov 5 Apr 5 21:15 unzip/test/3/4
+&lt;/code>&lt;/pre></description></item><item><title>Simple Recovery of LUKS-encrypted Partitions</title><link>https://nagimov.me/post/simple-recovery-of-luks-encrypted-partitions/</link><pubDate>Mon, 09 Mar 2020 16:32:01 -0700</pubDate><guid>https://nagimov.me/post/simple-recovery-of-luks-encrypted-partitions/</guid><description>&lt;p>LUKS encryption, while convenient, can become a major pain when the drive gets corrupted. Many things can lead to it:&lt;/p>
+&lt;ul>
+&lt;li>accidental wipe/format of the boot partition&lt;/li>
+&lt;li>accidental &lt;code>dd&lt;/code> to a wrong drive (sure, you pressed ^C right away but your grub is gone, sorry)&lt;/li>
+&lt;li>exceedingly &amp;ldquo;smart&amp;rdquo; utilities overwriting MBR or re-initializing encrypted partitions&lt;/li>
+&lt;li>drive/memory failures (power outage, random bit flip, etc.)&lt;/li>
+&lt;/ul>
+&lt;p>There are plenty of manuals on how to restore an accidentally wiped boot partition. However, more complicated cases (e.g. when &lt;code>vgscan&lt;/code> can&amp;rsquo;t find any LVM partitions) are not described as well, or sometimes wrongfully described as unrecoverable. The data is lost only when the LUKS header or encrypted bytes themselves are corrupted or overwritten, and encrypted data is usually recoverable even when the partitioning information is lost.&lt;/p>
+&lt;p>&lt;strong>Mandatory disclaimer:&lt;/strong> perform your data recovery on a cloned copy of the drive. If you don&amp;rsquo;t know what you are doing &amp;ndash; contact data recovery professionals. I am not responsible for any loss of data or loss of revenue or profit or any other damages, however caused.&lt;/p>
+&lt;h3 id="test-environment">Test environment&lt;/h3>
+&lt;p>Debian 10.3 is installed with a standard full disk encryption as a test environment:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/debian-luks-installation.gif#center" alt="debian luks installation">&lt;/p>
+&lt;p>Here&amp;rsquo;s how partitions look after installation:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0xf7251e65
+Device Boot Start End Sectors Size Id Type
+/dev/sda1 * 2048 499711 497664 243M 83 Linux
+/dev/sda2 501758 16775167 16273410 7.8G 5 Extended
+/dev/sda5 501760 16775167 16273408 7.8G 83 Linux
+Disk /dev/mapper/sda5_crypt: 7.8 GiB, 8315207680 bytes, 16240640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/debian--vg-root: 6.7 GiB, 7226785792 bytes, 14114816 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/debian--vg-swap_1: 1020 MiB, 1069547520 bytes, 2088960 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+&lt;/code>&lt;/pre>&lt;p>As a test file for recovery, 1GB file with random data is created in the home directory:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ head -c 1G &amp;lt;/dev/urandom &amp;gt;~/test_file
+user@debian:~$ md5sum ~/test_file
+20b731225ecb7260c1155da750f810d3 /home/user/test_file
+&lt;/code>&lt;/pre>&lt;p>In order to test the worst (but still recoverable) failure, LVM partitioning metadata is erased. LUKS reserves 2 MiB for its headers and that area is preserved. The size of LVM metadata area is calculated using the output of &lt;code>fdisk&lt;/code> from above:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo dd if=/dev/zero of=/dev/sda5 bs=512 seek=4096 count=$(((8315207680-7226785792-1069547520)/512-4096))
+32768+0 records in
+32768+0 records out
+16777216 bytes (17 MB, 16 MiB) copied, 0.796235 s, 21.1 MB/s
+&lt;/code>&lt;/pre>&lt;p>Finally, MBR is wiped:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo dd if=/dev/zero of=/dev/sda bs=512 count=1
+1+0 records in
+1+0 records out
+512 bytes copied, 0.00791088 s, 64.7 kB/s
+&lt;/code>&lt;/pre>&lt;p>Note that &lt;code>/dev/sda&lt;/code> has no partition information left:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/sda5_crypt: 7.8 GiB, 8315207680 bytes, 16240640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/debian--vg-root: 6.7 GiB, 7226785792 bytes, 14114816 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/debian--vg-swap_1: 1020 MiB, 1069547520 bytes, 2088960 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+&lt;/code>&lt;/pre>&lt;p>After reboot, as expected, the system stops with an error:&lt;/p>
+&lt;pre>&lt;code>FATAL: No bootable media found! System halted.
+&lt;/code>&lt;/pre>&lt;h3 id="finding-luks-partitions">Finding LUKS partitions&lt;/h3>
+&lt;p>The recovery is performed using gparted live-cd environment (iso-images are available from &lt;a href="https://gparted.org">https://gparted.org&lt;/a>).&lt;/p>
+&lt;p>First, it is verified that there are indeed no partitions left on the drive (an extra 2GB disk represents a USB thumb drive in the output below):&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/sdb: 2 GiB, 2147483648 bytes, 4194304 sectors
+Disk model: HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x54c0d141
+Device Boot Start End Sectors Size Id Type
+/dev/sdb1 2048 4194303 4192256 2G 7 HPFS/NTFS/exFAT
+Disk /dev/loop0: 303.5 MiB, 317767680 bytes, 620640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+&lt;/code>&lt;/pre>&lt;p>But the drive still contains the data. In order to locate partitions, we can use the fact that the first four bytes of any LUKS partition are always &lt;code>0x4c 0x55 0x4b 0x53&lt;/code> or &lt;code>LUKS&lt;/code> in ascii. It might take awhile to scan the entire drive, so as soon as the offset of LUKS partition is found, hexdump can be killed via &lt;code>^C&lt;/code>.&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo hexdump -C /dev/sda | grep LUKS
+0f500000 4c 55 4b 53 ba be 00 02 00 00 00 00 00 00 40 00 |LUKS..........@.|
+^C
+&lt;/code>&lt;/pre>&lt;p>Next, a loop device can be set up using the found offset. Note the &lt;code>-r&lt;/code> option &amp;ndash; it is safer to set up the device as read-only.&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo losetup -o 0xf500000 -r -f /dev/sda
+user@debian:~$ sudo losetup -a
+/dev/loop1: [0006]:10205 (/dev/sda), offset 256901120
+/dev/loop0: [2816]:4883 (/run/live/medium/live/filesystem.squashfs)
+&lt;/code>&lt;/pre>&lt;p>Loop device &lt;code>/dev/loop1&lt;/code> now contains bytes from the drive &lt;code>/dev/sda&lt;/code>, starts at the offset &lt;code>0xf500000&lt;/code> and spans to the rest of the drive. The beginning of LUKS partition is caught correctly, but not necessarily the end of it. In practice, this is not an issue.&lt;/p>
+&lt;h3 id="decrypting-luks-partitions">Decrypting LUKS partitions&lt;/h3>
+&lt;pre>&lt;code>user@debian:~$ sudo cryptsetup luksOpen /dev/loop1 recovery
+Enter passphrase for /dev/sda:
+&lt;/code>&lt;/pre>&lt;p>At this stage, the passphrase is prompted and, if entered correctly, decrypted LVM partition is mapped to &lt;code>/dev/mapper/recovery&lt;/code>:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo fdisk -l
+Disk /dev/sda: 8 GiB, 8589934592 bytes, 16777216 sectors
+Disk model: VBOX HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/sdb: 2 GiB, 2147483648 bytes, 4194304 sectors
+Disk model: HARDDISK
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: dos
+Disk identifier: 0x54c0d141
+Device Boot Start End Sectors Size Id Type
+/dev/sdb1 2048 4194303 4192256 2G 7 HPFS/NTFS/exFAT
+Disk /dev/loop0: 303.5 MiB, 317767680 bytes, 620640 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/loop1: 7.78 GiB, 8333033472 bytes, 16275456 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disk /dev/mapper/recovery: 7.76 GiB, 8316256256 bytes, 16242688 sectors
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+&lt;/code>&lt;/pre>&lt;p>It is unfortunately not mountable directly (even if LVM partition metadata wasn&amp;rsquo;t damaged), since it contains multiple LVM logical volumes and therefore cannot be treated as a single partition.&lt;/p>
+&lt;p>LVM partition metadata was cleared so LVM tools cannot identify any volumes or groups:&lt;/p>
+&lt;pre>&lt;code>user@debian:~$ sudo pvscan
+No matching physical volumes found
+user@debian:~$ sudo vgscan
+user@debian:~$ sudo lvscan
+&lt;/code>&lt;/pre>&lt;p>However, this volume can be scanned directly and the files can be recovered using &lt;code>testdisk&lt;/code> in few easy steps:&lt;/p>
+&lt;ul>
+&lt;li>mount external drive and launch testdisk:&lt;/li>
+&lt;/ul>
+&lt;pre>&lt;code>user@debian:~$ sudo mkdir /media/external
+user@debian:~$ sudo mount -t ntfs /dev/sdb1 /media/external
+user@debian:~$ sudo testdisk
+&lt;/code>&lt;/pre>&lt;ul>
+&lt;li>recover the test file:&lt;/li>
+&lt;/ul>
+&lt;p>&lt;img src="https://nagimov.me/images/testdisk-recovery.gif#center" alt="testdisk recovery">&lt;/p>
+&lt;ul>
+&lt;li>and verify its integrity:&lt;/li>
+&lt;/ul>
+&lt;pre>&lt;code>user@debian:~$ md5sum /media/external/home/user/test_file
+20b731225ecb7260c1155da750f810d3 /media/external/home/user/test_file
+&lt;/code>&lt;/pre>&lt;p>This approach is of course overkill in case of minor failures. E.g. if GRUB doesn&amp;rsquo;t boot due to damaged &lt;code>/boot&lt;/code> partition, it could be restored without loosing the base system using &lt;code>grub-install&lt;/code>. However, if the partitioning metadata is lost, &lt;code>testdisk&lt;/code> can help to quickly recover the files.&lt;/p>
+&lt;p>P.S. &lt;a href="https://gitlab.com/cryptsetup/cryptsetup/-/wikis/FrequentlyAskedQuestions#6-backup-and-data-recovery">Set up you backups already!&lt;/a>&lt;/p></description></item><item><title>The Horror of PLC Programming</title><link>https://nagimov.me/post/the-horror-of-plc-programming/</link><pubDate>Thu, 03 Oct 2019 19:41:14 -0700</pubDate><guid>https://nagimov.me/post/the-horror-of-plc-programming/</guid><description>&lt;p>Consider this simple code snippet&amp;hellip;&lt;/p>
+&lt;pre>&lt;code>10 VALVE1_POS = S405_VH(1400)
+20 VALVE2_POS = 80.0
+30 IF VALVE1_POS &amp;gt; 50.0 THEN VALVE3_POS = 99.5 ELSE VALVE3_POS = 0.5
+&lt;/code>&lt;/pre>&lt;p>&amp;hellip;and let me follow your observations:&lt;/p>
+&lt;ul>
+&lt;li>you notice a weird line enumeration, just like in good old BASIC,&lt;/li>
+&lt;li>you see three variables, &lt;code>VALVE1_POS&lt;/code>, &lt;code>VALVE2_POS&lt;/code> and &lt;code>VALVE3_POS&lt;/code>,&lt;/li>
+&lt;li>you find &lt;code>S405_VH(1400)&lt;/code> most likely to be a function call retrieving a position of the valve 1,&lt;/li>
+&lt;li>position of the valve 2 is set to &lt;code>80.0&lt;/code>,&lt;/li>
+&lt;li>following the last if-then-else statement, you realize that the position of valve 3 is defined based on the position of the valve 1.&lt;/li>
+&lt;/ul>
+&lt;p>Assuming that the code above compiles to a valid program, can you think of a bug/feature that would cause all three variables to contain the value &lt;code>99.5&lt;/code>?&lt;/p>
+&lt;p>Here&amp;rsquo;s another two-liner:&lt;/p>
+&lt;pre>&lt;code>10 VALVE1_STEP = 10.0
+20 VALVE1_END = 90.0
+&lt;/code>&lt;/pre>&lt;p>Considering that the first example compiles and runs successfully, can you think of a reason why the second one fails?&lt;/p>
+&lt;p>If you know the answers, then it&amp;rsquo;s a good idea to stop reading now. No need to feed your professional anxieties. The rest are invited to follow along and discover the Horror of PLC Programming.&lt;/p>
+&lt;h3 id="why-so-basic">Why so BASIC?&lt;/h3>
+&lt;p>The code above is indeed written in limited and slightly deformed subset of BASIC. You may or may not find the lack of &lt;code>LET&lt;/code>s awkward, but otherwise these snippets are plain and simple BASIC. There are no arrays with &lt;code>DIM&lt;/code>s and &lt;code>REDIM&lt;/code>s that can screw things up or &lt;a href="https://stackoverflow.com/questions/18135971/quick-basic-colon-line-separator">colon controversies&lt;/a>. It&amp;rsquo;s as basic as BASIC gets (sorry).&lt;/p>
+&lt;p>&amp;ldquo;What a weird language choice for controlling valves!&amp;rdquo; you say. &amp;ldquo;What on flat-earth does this have to deal with 2019?&amp;rdquo; you ask. Keep on reading.&lt;/p>
+&lt;p>PLCs are made to be robust and more often than not programmed using &lt;a href="https://en.wikipedia.org/wiki/Ladder_logic">ladder logic&lt;/a>. PLC programs aren&amp;rsquo;t meant to be easy to write, but are easy to debug. You&amp;rsquo;ll never find tail-recursion or polymorphism capabilities in PLC languages. There is no unit-testing, you&amp;rsquo;ll test it in the field, attached to a big, heavy, piece of industrial machinery. Many PLCs lack the most basic concepts like &lt;em>variables&lt;/em>. Ladder logic is never mentioned at hackathons, your local meetups, or &lt;a href="https://hn.algolia.com/?query=%22ladder%20logic%22">praised on hacker news&lt;/a>.&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/ladder-logic-hacker-news.png#center" alt="width500px">&lt;/p>
+&lt;p>&lt;a href="https://en.wikipedia.org/wiki/Programmable_logic_controller#Invention_and_early_development">As a natural evolution of electromechanical relay control systems&lt;/a>, ladder logic programming follows similar rules. Here&amp;rsquo;s how a simple PLC program controlling an AC unit might look like:&lt;/p>
+&lt;pre>&lt;code>+----[ ]----+----[ ]----+----( )
+| Switch | HiTemp | A/C
+| | |
+| +----[ ]----+
+| Humid
+|
++----[ ]---------[\]---------( )
+A/C Heat Cooling
+&lt;/code>&lt;/pre>&lt;p>Inputs &amp;ldquo;relays&amp;rdquo; are shown as &lt;code>--[ ]--&lt;/code>, outputs are &lt;code>--( )--&lt;/code>. When enough inputs are activated to create a &amp;ldquo;current path&amp;rdquo; to the output, it becomes &amp;ldquo;energized&amp;rdquo;. This worked well for early systems that were designed to replace relay boxes. However spoiled engineers demanded fancier features, such as integer arithmetic, floating-point operations and even string manipulations. Following the lead of a semiconductor industry, PLC manufacturers complemented their systems with coprocessors for floating-point math and whatnot. Unfortunately, many of them haven&amp;rsquo;t got any further, albeit some systems nowadays support &lt;a href="https://en.wikipedia.org/wiki/Structured_text">structured text&lt;/a> or even subsets of C/C++.&lt;/p>
+&lt;p>Back to 2019, a current generation of mid-level PLCs from a well known North American manufacturer requires a coprocessor module to communicate with serial interfaces. This coprocessor is fancy enough to support floating point math and string manipulations and, you guessed it, is programmed in BASIC. Our happy PLC programmer is eager to use it to its full potential, multiply floats, truncate strings and sometimes go crazy extracting square roots.&lt;/p>
+&lt;p>Let&amp;rsquo;s get back to the first example:&lt;/p>
+&lt;pre>&lt;code>10 VALVE1_POS = S405_VH(1400)
+20 VALVE2_POS = 80.0
+30 IF VALVE1_POS &amp;gt; 50.0 THEN VALVE3_POS = 99.5 ELSE VALVE3_POS = 0.5
+&lt;/code>&lt;/pre>&lt;h3 id="the-call-of-mysterious-s405_vh">The call of mysterious &lt;code>S405_VH&lt;/code>&lt;/h3>
+&lt;p>I know what you&amp;rsquo;re thinking. The mysterious function that appears in the first example has some magical powers and is going to change the global state, hang the execution, or throw a weird uncatchable exception. This is not the case.&lt;/p>
+&lt;p>&lt;code>S405_VH(1400)&lt;/code> simply reads an octal word from the specified memory address &lt;code>V1400&lt;/code> in HEX format, hence &lt;code>_VH&lt;/code>. What is an octal word, you ask? Well, it&amp;rsquo;s just two 8-bit memory chunks stitched together, aka 16-bit. No, you can&amp;rsquo;t call it a &amp;ldquo;byte&amp;rdquo;. It&amp;rsquo;s an octal.&lt;/p>
+&lt;p>Why is memory addressed in such a weird way, &lt;code>V1400&lt;/code>? There are two parts: &lt;code>V&lt;/code> indicates a type of memory range. Along with &lt;code>X&lt;/code>, &lt;code>Y&lt;/code>, &lt;code>C&lt;/code>, &lt;code>T&lt;/code>, &lt;code>CT&lt;/code>, &lt;code>S&lt;/code>, &lt;code>SP&lt;/code>, &lt;code>GX&lt;/code> and &lt;code>GY&lt;/code>, it partitions the PLC memory into various &amp;ldquo;types&amp;rdquo;. Some types are inputs, some are outputs, some store timers and counters, some store system configuration parameters. They can store octal words (16 bit), single octals (8 bit), or deal with individual bits directly.&lt;/p>
+&lt;p>The second part, &lt;code>1400&lt;/code>, is the address of a memory location within the &lt;code>V&lt;/code> memory type range. Since &lt;code>1400&lt;/code> is an octal number, you would write it as &lt;code>01400&lt;/code> in C, or &lt;code>0o1400&lt;/code> in Python, but it&amp;rsquo;s just the semantics of this particular PLC. Everything is an octal. This particular value, &lt;code>0o1400&lt;/code> is the beginning of a specialized sub-range of the &lt;code>V&lt;/code> memory type that spans from &lt;code>0o1400&lt;/code> to &lt;code>0o7377&lt;/code>, it is a so called &amp;ldquo;User Data Types&amp;rdquo; range. &lt;code>V&lt;/code> memory ranges start at &lt;code>0o700&lt;/code>, not &lt;code>0o0&lt;/code> (remember typing &lt;code>org 0x100&lt;/code> in x86 assembly, like, 30 years ago?). There are no variables, only an &amp;ldquo;accumulator&amp;rdquo;. Data management hasn&amp;rsquo;t improved much since &lt;code>mov ax, dx&lt;/code>. The point being that &lt;strong>BASIC is an improvement&lt;/strong> from a native PLC code.&lt;/p>
+&lt;p>(You remember I said that everything is an octal? I lied. When you deal with data, then everything is interpreted as HEX. Unless it is a &lt;a href="https://en.wikipedia.org/wiki/Binary-coded_decimal">binary-coded decimal (BCD)&lt;/a>, sometimes. If that&amp;rsquo;s the case, it is the programmer&amp;rsquo;s responsibility to ensure that BCD-HEX conversions are handled properly, compile time checks don&amp;rsquo;t catch that.)&lt;/p>
+&lt;h3 id="whats-wrong-with-the-valves">What&amp;rsquo;s wrong with the valves&lt;/h3>
+&lt;p>But I digress. We are trying to understand the first line of the first example, &lt;code>VALVE1_POS = S405_VH(1400)&lt;/code>. &amp;ldquo;I know!&amp;rdquo; you say. &amp;ldquo;It returns HEX instead of BCD! Or BCD instead of HEX! Or an integer instead of a float! That&amp;rsquo;s where the bug is!&amp;rdquo; But that would be too easy. So let&amp;rsquo;s assume that &lt;code>S405_VH(1400)&lt;/code> returns exactly what we expect and the variable &lt;code>VALVE1_POS&lt;/code> now contains a legitimate value. And yet, after all three lines are executed, &lt;code>VALVE1_POS&lt;/code>, &lt;code>VALVE2_POS&lt;/code> and &lt;code>VALVE3_POS&lt;/code> all contain value &lt;code>99.5&lt;/code>. &lt;strong>In fact they are all the same variable!&lt;/strong>&lt;/p>
+&lt;p>Here&amp;rsquo;s how this particular implementation of BASIC identifies variables by their names:&lt;/p>
+&lt;ul>
+&lt;li>get the first character of the variable name (A);&lt;/li>
+&lt;li>get the last character of the variable name (B);&lt;/li>
+&lt;li>get the length of the variable name (N);&lt;/li>
+&lt;li>&lt;strong>the combination of A, B and N defines a variable&lt;/strong>, so &lt;code>VALVE1_POS&lt;/code>, &lt;code>VALVE2_POS&lt;/code> and &lt;code>VALVE3_POS&lt;/code> are interpreted as identical names.&lt;/li>
+&lt;/ul>
+&lt;p>Imagine the world where:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>TEMP1_C&lt;/code> and &lt;code>TEMP2_C&lt;/code> are identical variables;&lt;/li>
+&lt;li>&lt;code>VOLT_DAC&lt;/code> and &lt;code>VOLT_ADC&lt;/code> are identical variables;&lt;/li>
+&lt;li>&lt;code>TIMER_SET&lt;/code> and &lt;code>TIMER_RST&lt;/code> are identical variables;&lt;/li>
+&lt;li>&lt;code>INPUT1_CH3&lt;/code> and &lt;code>INPUT2_CH3&lt;/code> are identical variables;&lt;/li>
+&lt;li>&lt;code>PRESSURE_PIPE&lt;/code>, &lt;code>PRESSURE_TUBE&lt;/code> and &lt;code>PRESSURE_GAGE&lt;/code> are all the same thing.&lt;/li>
+&lt;/ul>
+&lt;p>Happy debugging.&lt;/p>
+&lt;h3 id="two-bugs-in-two-lines">Two bugs in two lines&lt;/h3>
+&lt;pre>&lt;code>10 VALVE1_STEP = 10.0
+20 VALVE1_END = 90.0
+&lt;/code>&lt;/pre>&lt;p>This example is similarly annoying. In this particular BASIC world, variables cannot contain any keywords as a part of their names.&lt;/p>
+&lt;p>&lt;code>STEP&lt;/code> is a keyword. &lt;code>END&lt;/code> is a keyword. &lt;code>VALVE1_STEP&lt;/code> and &lt;code>VALVE1_END&lt;/code> aren&amp;rsquo;t valid variable names.&lt;/p>
+&lt;h3 id="docu-mentation">Docu&amp;hellip; mentation?&lt;/h3>
+&lt;p>The fun way of discovering these &amp;ldquo;features&amp;rdquo; is of course through the endless debugging (there is no actual debugger, you just print your variables to a serial port and catch them at the other end). Okay, let&amp;rsquo;s assume you&amp;rsquo;re keen to RTFM and download manuals from the manufacturer&amp;rsquo;s web-site. Unfortunately, they don&amp;rsquo;t contain language specifications. You&amp;rsquo;re not giving up and going through the manuals for similar and discontinued modules. One of them describes this behavior as a &amp;ldquo;helpful hint&amp;rdquo; [sic] at the end of a code sample, in the &amp;ldquo;TRANSFER INSTRUCTION&amp;rdquo; chapter of the manual:&lt;/p>
+&lt;p>&lt;em>Helpful Hint: The variables LSB10 and LSB20, CODE15 and CODE25 or REG400 and REG410 will return the same value due to the way that BASIC stores variables. To avoid this problem, use dimensioned variables such as CODE(index) or REG(index).&lt;/em>&lt;/p>
+&lt;p>No wonder you missed that. So you keep debugging. Your programming tool doesn&amp;rsquo;t show any useful messages so you give up trying to google the problem. Days go by, and you make no progress. Desperate, you are seeking for advice. You are knocking on the door of &amp;ldquo;Bob the PLC guy&amp;rdquo; who is retiring in two days. You&amp;rsquo;re hiding your tears and trying to stay calm. He looks at your code and smiles, pulls up an old IBM Thinkpad with Windows 2000 and launches a weird looking version of the programming tool. He then presses &lt;code>F1&lt;/code> and Microsoft Windows Help shows up. He types &amp;ldquo;variables&amp;rdquo; in the search bar and finds the page he needs. You look at the page, and you look at the guy. You&amp;rsquo;re angry and happy at the same time. You copy the help file and thank Bob. You leave early that day and head to your favorite bar to have a little celebration. You are now a &amp;ldquo;Level 2 PLC guy&amp;rdquo;.&lt;/p>
+&lt;hr>
+&lt;h4 id="all-characters-and-other-entities-appearing-in-this-story-are-fictitious-any-resemblance-to-real-persons-dead-or-alive-or-other-real-life-entities-past-or-present-is-purely-coincidental">&lt;em>All characters and other entities appearing in this story are fictitious. Any resemblance to real persons, dead or alive, or other real-life entities, past or present, is purely coincidental.&lt;/em>&lt;/h4></description></item><item><title>Running Docker on 32-bit Hosts</title><link>https://nagimov.me/post/running-docker-on-32-bit-hosts/</link><pubDate>Sun, 03 Feb 2019 00:42:28 -0800</pubDate><guid>https://nagimov.me/post/running-docker-on-32-bit-hosts/</guid><description>&lt;p>Docker is known to not to support 32-bit hosts. As per &lt;a href="https://docs.docker.com/install/linux/docker-ce/debian">debian installation instructions&lt;/a>: &lt;code>Docker CE is supported on x86_64 (or amd64), armhf, and arm64 architectures.&lt;/code> 32-bit hosts are unlikely to become supported either &amp;ndash; &lt;a href="https://github.com/moby/moby/issues/136">&amp;ldquo;let&amp;rsquo;s bring docker on 32-bit&amp;rdquo; issue&lt;/a> was closed and locked back in 2014.&lt;/p>
+&lt;p>Nothing fundamentally prevents docker (including latest version of docker CE) from running on 32-bit platforms. I am currently running a slightly outdated version &lt;code>18.03.0-ce&lt;/code> on a 15 years old &lt;a href="https://www-01.ibm.com/common/ssi/cgi-bin/ssialias?infotype=AN&amp;amp;subtype=CA&amp;amp;htmlfid=897/ENUS104-011">IBM xSeries 335 server&lt;/a> with a whopping 2.8GHz Intel Xeon and 4GB of DDR RAM. It comfortably runs half a dozen containers (nginx proxies with simple API end points) and a bunch of scripts poking at various sensors.&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/ibm-xseries-335.jpg#center" alt="width500px">&lt;/p>
+&lt;p>The server only supports IDE drives and I had to use a floppy diskette to sideload firmware for the network card (USB port wasn&amp;rsquo;t recognized by debian installer). This particular server been in 24/7 operation since its birth, with a brief interruption for two years in 2013-2014, when its ownership has changed (I picked it from the scrap yard, along with two complete replacement spares). Check out this boot animation from early 2000&amp;rsquo;s:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/ibm-xseries-335-boot-diskette.gif#center" alt="width300px">&lt;/p>
+&lt;p>There are obviously no official docker builds for 32-bit platforms, but &lt;a href="https://github.com/mforkel/docker-ce-i386">this fork&lt;/a> supports building i386 docker. It is slightly outdated (&lt;code>18.03.0-ce&lt;/code> as of February 2019), albeit I can&amp;rsquo;t remember any sweet features released since then anyways.&lt;/p>
+&lt;p>The build scripts themselves require a 64-bit environment, so if you can build docker on a 64-bit platform first, the recipe should work as-is.&lt;/p>
+&lt;p>I decided to complicate things further and run the installation entirely on a 32-bit system, so there are few changes to the recipe.&lt;/p>
+&lt;h4 id="prerequisites">Prerequisites&lt;/h4>
+&lt;ul>
+&lt;li>debian 9.5.0 32-bit installed&lt;/li>
+&lt;li>apt repositories configured with network mirrors&lt;/li>
+&lt;li>&lt;code>sudo&lt;/code>, &lt;code>git&lt;/code> and &lt;code>build-essential&lt;/code> installed in addition to bare debian image&lt;/li>
+&lt;/ul>
+&lt;h4 id="installing-docker-io">Installing &lt;code>docker-io&lt;/code>&lt;/h4>
+&lt;p>The above mentioned docker build scripts use an existing docker installation. So if we want to build docker for a 32-bit platform, we have to have docker installed for the build (&lt;code>WinRAR.rar&lt;/code>, anyone?)&lt;/p>
+&lt;p>As hopeless as it sounds, there is a way out. &lt;code>Docker.io&lt;/code> package from &lt;code>jessie-backports&lt;/code> &lt;em>can&lt;/em> run on 32-bit hosts, even though there is a big red flag in the &lt;a href="https://packages.debian.org/jessie-backports/docker.io">description&lt;/a>: &lt;code>Using docker.io on non-amd64 hosts is not supported at this time. Please be careful when using it on anything besides amd64.&lt;/code> We won&amp;rsquo;t use it in production, and it works fine as a build environment.&lt;/p>
+&lt;p>Install the package:&lt;/p>
+&lt;ul>
+&lt;li>add &lt;code>deb https://deb.debian.org/debian jessie-backports main&lt;/code> to your apt sources in &lt;code>/etc/apt/sources.list&lt;/code>&lt;/li>
+&lt;li>update the package index: &lt;code>sudo apt-get update&lt;/code>&lt;/li>
+&lt;li>install the &lt;code>docker.io&lt;/code> package: &lt;code>sudo apt-get -t jessie-backports install docker.io&lt;/code>&lt;/li>
+&lt;li>check the version of docker binary: &lt;code>docker -v&lt;/code> (outputs &lt;code>Docker version 1.6.2, build 7c8fca2&lt;/code>)&lt;/li>
+&lt;/ul>
+&lt;h4 id="building-32-bit-docker-from-sources">Building 32-bit docker from sources&lt;/h4>
+&lt;p>Now is the time to install a relatively fresh version of docker from &lt;a href="https://github.com/mforkel/docker-ce-i386">this magic repo&lt;/a>.&lt;/p>
+&lt;p>Clone the repo:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>cd /tmp&lt;/code>&lt;/li>
+&lt;li>&lt;code>git clone https://github.com/mforkel/docker-ce-i386&lt;/code>&lt;/li>
+&lt;li>&lt;code>cd docker-ce-i386&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Depending from the state of this repository, you might need to switch the branch, e.g. &lt;code>git checkout 18.03-i386&lt;/code>, depending from what versions are currently available. I used the latest commit available as of February, 2019:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>git checkout c68b084&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>The build script assumes that a relatively fresh version of docker is available. Our &lt;code>docker.io&lt;/code> is from 2015, and it doesn&amp;rsquo;t support &lt;code>ARG&lt;/code> Dockerfiles parameters. That&amp;rsquo;s an easy fix:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>sed -i &amp;quot;s/ARG APT_MIRROR=deb.debian.org/# ARG APT_MIRROR=deb.debian.org/&amp;quot; ./components/engine/contrib/builder/deb/i386/debian-stretch/Dockerfile&lt;/code>&lt;/li>
+&lt;li>&lt;code>sed -i &amp;quot;s/\$APT_MIRROR/deb.debian.org/&amp;quot; ./components/engine/contrib/builder/deb/i386/debian-stretch/Dockerfile&lt;/code>&lt;/li>
+&lt;li>&lt;code>sed -i &amp;quot;s/ARG APT_MIRROR=deb.debian.org/# ARG APT_MIRROR=deb.debian.org/&amp;quot; ./components/packaging/deb/debian-stretch/Dockerfile.i386&lt;/code>&lt;/li>
+&lt;li>&lt;code>sed -i &amp;quot;s/\$APT_MIRROR/deb.debian.org/g&amp;quot; ./components/packaging/deb/debian-stretch/Dockerfile.i386&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>The build script also uses an official &lt;code>alpine&lt;/code> image from dockerhub, which is 64-bit. We need to replace it with &lt;code>i386/alpine&lt;/code>:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>sed -i &amp;quot;s/alpine/i386\/alpine/&amp;quot; ./components/packaging/deb/Makefile&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Now is finally the time to run the build:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>sudo ARCH=i386 DOCKER_BUILD_PKGS=debian-stretch make deb&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Make sure that a newly built &lt;code>*.deb&lt;/code> package is present:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>ls ./components/packaging/deb/debbuild/debian-stretch/&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Remove old docker installation:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>sudo apt-get remove docker.io&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Install the newly built &lt;code>*.deb&lt;/code> package:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>sudo dpkg -i ./components/packaging/deb/debbuild/debian-stretch/docker-ce_18.03.0~ce-0~debian_i386.deb&lt;/code>&lt;/li>
+&lt;li>&lt;code>sudo apt-get install -f&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>We&amp;rsquo;re done:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>docker -v&lt;/code> outputs &lt;code>Docker version 18.03.0-ce, build c68b084381&lt;/code>&lt;/li>
+&lt;li>&lt;code>sudo docker run hello-world&lt;/code> successfully pulls and runs the test image&lt;/li>
+&lt;/ul>
+&lt;h4 id="getting-32-bit-docker-compose">Getting 32-bit docker-compose&lt;/h4>
+&lt;p>Thankfully, 32-bit package of &lt;code>docker-compose&lt;/code> is available from &lt;a href="https://launchpad.net/ubuntu/xenial/i386/docker-compose/1.8.0-2~16.04.1">this Ubuntu Xenial repository&lt;/a>, so installation is as simple as:&lt;/p>
+&lt;ul>
+&lt;li>&lt;code>cd /tmp&lt;/code>&lt;/li>
+&lt;li>&lt;code>wget https://launchpadlibrarian.net/314562376/docker-compose_1.8.0-2~16.04.1_all.deb&lt;/code>&lt;/li>
+&lt;li>&lt;code>sudo dpkg -i docker-compose_1.8.0-2~16.04.1_all.deb&lt;/code>&lt;/li>
+&lt;li>&lt;code>sudo apt-get install -f&lt;/code>&lt;/li>
+&lt;li>&lt;code>docker-compose --version&lt;/code> outputs &lt;code>docker-compose version 1.8.0, build unknown&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;h4 id="living-with-docker-on-32-bit-hosts">Living with docker on 32-bit hosts&lt;/h4>
+&lt;p>Bear in mind, this isn&amp;rsquo;t the end of a weird journey. Overwhelming majority of images from dockerhub are built with 64-bit binaries (see the above mentioned official &lt;code>alpine&lt;/code> image), so there will be complications. E.g., the very popular &lt;a href="https://github.com/jwilder/nginx-proxy">nginx-proxy&lt;/a> image is built with 64-bit builds of both &lt;a href="https://github.com/jwilder/docker-gen">docker-gen&lt;/a> and &lt;a href="https://github.com/jwilder/forego">forego&lt;/a>, and is based on official &lt;code>nginx:1.11.10&lt;/code> image which in turn is based on official 64-bit &lt;code>debian:jessie&lt;/code> image. The following changes would make it usable on 32-bit hosts:&lt;/p>
+&lt;ul>
+&lt;li>replace docker-gen binary (i386 builds are available from &lt;a href="https://github.com/jwilder/docker-gen/releases">releases&lt;/a>)&lt;/li>
+&lt;li>replace forego binary (i386 build can be found &lt;a href="https://dl.equinox.io/ddollar/forego/stable/archive">here&lt;/a>)&lt;/li>
+&lt;li>bump nginx version to &lt;code>nginx:1.14&lt;/code> &amp;ndash; it is based on 32-bit &lt;code>debian:stretch-slim&lt;/code>&lt;/li>
+&lt;/ul>
+&lt;p>Another example &amp;ndash; must-have sibling of nginx-proxy, &lt;a href="https://github.com/JrCs/docker-letsencrypt-nginx-proxy-companion">letsencrypt-nginx-proxy-companion&lt;/a>, is based on official 64-bit &lt;code>alpine&lt;/code> image and uses &lt;a href="https://github.com/jwilder/docker-gen">docker-gen&lt;/a> as well, therefore:&lt;/p>
+&lt;ul>
+&lt;li>replace &lt;code>alpine&lt;/code> with &lt;code>i386/alpine&lt;/code>&lt;/li>
+&lt;li>replace &lt;code>docker-gen&lt;/code> binary with i386 version&lt;/li>
+&lt;/ul>
+&lt;p>&amp;hellip;and so on. Some images of course are simply not worth porting back to the 32-bit world, and docker on 32-bit platforms is only worth using for simple images, but hey, that&amp;rsquo;s 90% of my use-cases anyways :)&lt;/p></description></item><item><title>alsa-utils' arecord bug: lots of *.wav files, ignoring --duration parameter</title><link>https://nagimov.me/post/alsa-utils-arecord-bug-lots-of-.wav-files-ignoring-duration-parameter/</link><pubDate>Thu, 18 Aug 2016 20:56:00 -0800</pubDate><guid>https://nagimov.me/post/alsa-utils-arecord-bug-lots-of-.wav-files-ignoring-duration-parameter/</guid><description>&lt;p>&lt;img src="https://nagimov.me/images/alsamixer.png#center" alt="width500px">&lt;/p>
+&lt;p>I ran into a rather funny bug recently &amp;ndash; when recording audio on an RPi with Raspbian Jessie via an external USB sound card, &lt;code>arecord&lt;/code> doesn&amp;rsquo;t stop recording after a period of time specified by &lt;code>--duration&lt;/code> flag, but keeps running and filling files &lt;code>*-01.wav&lt;/code>, &lt;code>*-02.wav&lt;/code>, etc. with garbage data. Googling doesn&amp;rsquo;t return a solution, &lt;a href="http://superuser.com/questions/583826/recording-using-arecord-creates-thousands-of-files">except an obvious one&lt;/a> to &lt;code>killall -KILL arecord&lt;/code>. USB microphones &lt;a href="https://www.raspberrypi.org/forums/viewtopic.php?f=66&amp;amp;t=138722">are also affected&lt;/a>.&lt;/p>
+&lt;p>Since I have another RPi running Wheezy and showing no symptoms of the bug (and being free of systemd malware ;), the bug is likely in &lt;code>arecord&lt;/code> itself. Jessie from &lt;code>2016-05-27-raspbian-jessie.img&lt;/code> &lt;a href="https://packages.debian.org/jessie/alsa-utils">includes&lt;/a> alsa-utils of version &lt;code>1.0.28&lt;/code> and &lt;code>arecord --version&lt;/code> returns the same. There is &lt;a href="http://superuser.com/questions/583826/recording-using-arecord-creates-thousands-of-files">a report&lt;/a> indicating that &lt;code>1.0.27&lt;/code> from Arch is buggy as well. Wheezy &lt;a href="https://packages.debian.org/wheezy/alsa-utils">includes&lt;/a> alsa-utils of version &lt;code>1.0.25&lt;/code> and is free of this bug, so it was introduced in either &lt;code>1.0.26&lt;/code> or &lt;code>1.0.27&lt;/code>.&lt;/p>
+&lt;p>A temporary solution is to downgrade alsa-utils to &lt;code>1.0.25&lt;/code> or lower as follows:&lt;/p>
+&lt;ul>
+&lt;li>add Wheezy repos: &lt;code>echo &amp;quot;deb http://mirrordirector.raspbian.org/raspbian/ wheezy main contrib non-free rpi&amp;quot; &amp;gt;&amp;gt; /etc/apt/sources.list&lt;/code>&lt;/li>
+&lt;li>update the sources: &lt;code>sudo apt-get update&lt;/code>&lt;/li>
+&lt;li>check available versions: &lt;code>sudo aptitude versions alsa-utils&lt;/code> (this should indicate that the older version of alsa-utils is now available)&lt;/li>
+&lt;li>install the available older version: &lt;code>sudo apt-get install alsa-utils=1.0.25-4&lt;/code>&lt;/li>
+&lt;li>verify that &lt;code>arecord&lt;/code> now works fine, e.g.: &lt;code>arecord -D plughw:1,0 -r 44100 -f cd -d 5 -vv ~/test.wav&lt;/code> (recording should stop after 5 seconds)&lt;/li>
+&lt;li>revert the changes made to &lt;code>/etc/apt/sources.list&lt;/code> (comment out the newly added line) and update the sources again: &lt;code>sudo apt-get update&lt;/code>&lt;/li>
+&lt;/ul></description></item><item><title>Calibrating MAX31855 Thermocouple Amplifier</title><link>https://nagimov.me/post/calibrating-max31855-thermocouple-amplifier/</link><pubDate>Mon, 15 Aug 2016 17:55:00 -0800</pubDate><guid>https://nagimov.me/post/calibrating-max31855-thermocouple-amplifier/</guid><description>&lt;p>&lt;img src="https://nagimov.me/images/calibrating-max31855-thermocouple-amplifier/MAX31855-K-Type-Thermocouple-Breakout-Board.png#floatright" alt="width300px">&lt;/p>
+&lt;p>&lt;a href="https://www.maximintegrated.com/en/products/interface/sensor-interface/MAX31855.html">Maxim 31855 chips&lt;/a> are cheap and simple to use K-type thermocouple amplifiers. They&amp;rsquo;re equipped with a digital SPI interface with libraries available for both Raspberry Pi and Arduino boards. MAX31855 breakout boards are &lt;a href="https://www.adafruit.com/product/269">available from Adafruit&lt;/a>.&lt;/p>
+&lt;p>&lt;a href="https://datasheets.maximintegrated.com/en/ds/MAX31855.pdf">The datasheet&lt;/a> specifies the accuracy of ±2°C within the temperature range from -200°C to +700°C. However, close to the lower bound of this range, the accuracy of reported temperature is affected by linearized volt-to-degree conversion. Maxim 31855 uses a conversion factor of 0.041276 mV/K to calculate the difference between temperatures of the reference junction and the thermocouple. This known conversion factor can be used to recalculate the voltage and recalibrate the temperature via &lt;a href="http://srdata.nist.gov/its90/download/type_k.tab">NIST formulations&lt;/a> to achieve a better accuracy when measuring thermocouples used at liquid nitrogen temperatures.&lt;/p>
+&lt;p>&lt;a href="https://forums.adafruit.com/viewtopic.php?f=19&amp;amp;t=32086&amp;amp;start=45">This adafruit forum thread&lt;/a> contains all the necessary information and code for Arduino-compatible boards. A simple python implementation of the recalibration routine is as follows:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-python" data-lang="python">&lt;span style="color:#007020;font-weight:bold">import&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">numpy&lt;/span> &lt;span style="color:#007020;font-weight:bold">as&lt;/span> &lt;span style="color:#0e84b5;font-weight:bold">np&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">def&lt;/span> &lt;span style="color:#06287e">nist_tc&lt;/span>(tc, cj): &lt;span style="color:#60a0b0;font-style:italic"># tc - thermocouple, cj - cold junction&lt;/span>
+dV &lt;span style="color:#666">=&lt;/span> (tc &lt;span style="color:#666">-&lt;/span> cj) &lt;span style="color:#666">*&lt;/span> &lt;span style="color:#40a070">0.041276&lt;/span>
+&lt;span style="color:#007020;font-weight:bold">if&lt;/span> &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">5.891&lt;/span> &lt;span style="color:#666">&amp;lt;&lt;/span> dV &lt;span style="color:#666">&amp;lt;=&lt;/span> &lt;span style="color:#40a070">0&lt;/span>:
+d &lt;span style="color:#666">=&lt;/span> [&lt;span style="color:#40a070">0.0000000E+00&lt;/span>, &lt;span style="color:#40a070">2.5173462E+01&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.1662878E+00&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.0833638E+00&lt;/span>,
+&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">8.9773540E-01&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">3.7342377E-01&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">8.6632643E-02&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.0450598E-02&lt;/span>,
+&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">5.1920577E-04&lt;/span>, &lt;span style="color:#40a070">0.0000000E+00&lt;/span>]
+&lt;span style="color:#007020;font-weight:bold">elif&lt;/span> &lt;span style="color:#40a070">0&lt;/span> &lt;span style="color:#666">&amp;lt;&lt;/span> dV &lt;span style="color:#666">&amp;lt;=&lt;/span> &lt;span style="color:#40a070">20.644&lt;/span>:
+d &lt;span style="color:#666">=&lt;/span> [&lt;span style="color:#40a070">0.000000E+00&lt;/span>, &lt;span style="color:#40a070">2.508355E+01&lt;/span>, &lt;span style="color:#40a070">7.860106E-02&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">2.503131E-01&lt;/span>,
+&lt;span style="color:#40a070">8.315270E-02&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.228034E-02&lt;/span>, &lt;span style="color:#40a070">9.804036E-04&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">4.413030E-05&lt;/span>,
+&lt;span style="color:#40a070">1.057734E-06&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.052755E-08&lt;/span>]
+&lt;span style="color:#007020;font-weight:bold">elif&lt;/span> &lt;span style="color:#40a070">20.644&lt;/span> &lt;span style="color:#666">&amp;lt;&lt;/span> dV &lt;span style="color:#666">&amp;lt;&lt;/span> &lt;span style="color:#40a070">54.886&lt;/span>:
+d &lt;span style="color:#666">=&lt;/span> [&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.318058E+02&lt;/span>, &lt;span style="color:#40a070">4.830222E+01&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1.646031E+00&lt;/span>, &lt;span style="color:#40a070">5.464731E-02&lt;/span>,
+&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">9.650715E-04&lt;/span>, &lt;span style="color:#40a070">8.802193E-06&lt;/span>, &lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">3.110810E-08&lt;/span>, &lt;span style="color:#40a070">0.000000E+00&lt;/span>,
+&lt;span style="color:#40a070">0.000000E+00&lt;/span>, &lt;span style="color:#40a070">0.000000E+00&lt;/span>]
+&lt;span style="color:#007020;font-weight:bold">else&lt;/span>:
+&lt;span style="color:#007020;font-weight:bold">raise&lt;/span> &lt;span style="color:#007020">ValueError&lt;/span>(&lt;span style="color:#4070a0">&amp;#39;TC voltage must be in range (-5.891mV, 54.886mV)&amp;#39;&lt;/span>)
+dt &lt;span style="color:#666">=&lt;/span> np&lt;span style="color:#666">.&lt;/span>poly1d(d[::&lt;span style="color:#666">-&lt;/span>&lt;span style="color:#40a070">1&lt;/span>])(dV)
+&lt;span style="color:#007020;font-weight:bold">return&lt;/span> cj &lt;span style="color:#666">+&lt;/span> dt
+&lt;/code>&lt;/pre>&lt;/div>&lt;p>The errors of linear temperature conversions are tolerable down to ~0°C:&lt;/p>
+&lt;p>&lt;img src="https://nagimov.me/images/calibrating-max31855-thermocouple-amplifier/MAX31855-temperature-error.png#center" alt="">&lt;/p></description></item><item><title>Fire TV 2nd Gen - Root &amp; OpenVPN</title><link>https://nagimov.me/post/fire-tv-2nd-gen-root-openvpn/</link><pubDate>Wed, 30 Mar 2016 19:35:32 -0800</pubDate><guid>https://nagimov.me/post/fire-tv-2nd-gen-root-openvpn/</guid><description>&lt;p>&lt;img src="https://nagimov.me/images/amazon-fire-tv.png#center" alt="">&lt;/p>
+&lt;p>Fire TV is an awesome htpc replacement. It still requires rooting and, if you want to watch US Netflix shows outside of US, installing a VPN client.&lt;/p>
+&lt;p>Rooting is straightforward &amp;ndash; I just followed &lt;a href="http://www.aftvnews.com/how-to-root-the-amazon-fire-tv-2/">this guide&lt;/a>.&lt;/p>
+&lt;p>Installing OpenVPN is a bit more tricky. Even though there are few tutorials (e.g. &lt;a href="https://www.reddit.com/r/fireTV/comments/2b4hlh/finally_got_vpn_working/">this one&lt;/a> or &lt;a href="https://vpntips.com/fire-tv-vpn-install/">this one&lt;/a>), recommended &lt;a href="http://apps.evozi.com/apk-downloader/?id=de.schaeuffelhut.android.openvpn.installer">installer apk&lt;/a> doesn&amp;rsquo;t work on my Fire TV.&lt;/p>
+&lt;p>&lt;a href="http://jjjjango.blogspot.ca/2013/07/how-to-manually-install-openvpn-binary.html">This tutorial&lt;/a> recommends unpacking the OpenVPN binary manually to &lt;code>/system/xbin/&lt;/code>. After following the steps, OpenVPN returned the error &lt;code>only position independent executables (PIE) are supported&lt;/code> when started from adb. More info on this issue can be found &lt;a href="http://forum.xda-developers.com/google-nexus-5/development/fix-bypassing-pie-security-check-t2797731">here&lt;/a>.&lt;/p>
+&lt;p>The first option is to recompile the OpenVPN binary with PIE support (linker options &lt;code>&amp;quot;-fPIE -pie&amp;quot;&lt;/code>). Surely no one has time for that. A hackier way is to use a patched &lt;code>/system/bin/linker&lt;/code> that skips the PIE checks entirely. I tested a bunch of patched versions &amp;ndash; some of them caused funny crashes (e.g. random &lt;code>application storage space is full&lt;/code> errors) or even boot-looped the OS. &lt;a href="http://forum.xda-developers.com/showpost.php?p=59497445&amp;amp;postcount=83">This&lt;/a> is the version that worked fine on my Fire TV.&lt;/p>
+&lt;p>&lt;code>/system/bin/linker&lt;/code> can be quickly replaced using adb:&lt;/p>
+&lt;div class="highlight">&lt;pre style="background-color:#f0f0f0;-moz-tab-size:4;-o-tab-size:4;tab-size:4">&lt;code class="language-bash" data-lang="bash">adb push linker /sdcard/
+adb shell
+su
+mount -o remount rw /system
+mv /system/bin/linker /system/bin/linker.bak
+cp /sdcard/linker /system/bin/
+chmod &lt;span style="color:#40a070">755&lt;/span> /system/bin/linker
+mount -o remount ro /system
+rm /sdcard/linker
+&lt;/code>&lt;/pre>&lt;/div></description></item></channel></rss>
